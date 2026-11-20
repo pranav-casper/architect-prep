@@ -86,20 +86,20 @@ main { max-width: 720px; margin: 0 auto; }
 @media (max-width: 520px) { .facts { grid-template-columns: repeat(2, 1fr); } }
 
 /* Path choice */
-.paths { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-@media (max-width: 600px) { .paths { grid-template-columns: 1fr; } }
-.path { text-align: left; cursor: pointer; border: 1.5px solid transparent; background: var(--surface); border-radius: 24px; padding: 24px; display: flex; flex-direction: column; gap: 12px; transition: transform .2s, border-color .2s, box-shadow .2s; box-shadow: var(--shadow); }
-.path:hover { transform: translateY(-3px); border-color: var(--ink); }
-.path h2 { font-size: 1.6rem; }
-.path p { color: var(--body-ink); }
-.path ul { margin: 0; padding-left: 18px; color: var(--body-ink); font-size: .92rem; display: flex; flex-direction: column; gap: 4px; }
-.path-icon { width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; }
-.path-icon svg { width: 30px; height: 30px; }
+.paths { display: grid; grid-template-columns: 1fr; gap: 12px; }
+.path { text-align: left; cursor: pointer; border: 1.5px solid transparent; background: var(--surface); border-radius: 18px; padding: 16px 18px; display: flex; align-items: center; gap: 14px; transition: transform .2s, border-color .2s, box-shadow .2s; box-shadow: var(--shadow); }
+.path:hover { transform: translateY(-2px); border-color: var(--ink); }
+.path-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.path h2 { font-size: 1.25rem; }
+.path p { color: var(--body-ink); font-size: .92rem; margin: 0; }
+.path .go { font-size: 1.3rem; }
+.path-icon { width: 44px; height: 44px; flex: none; border-radius: 14px; display: grid; place-items: center; }
+.path-icon svg { width: 24px; height: 24px; }
 .path.learn { background: var(--t1); }
 .path.learn .path-icon { background: var(--surface); color: var(--ink); }
 .path.prac { background: var(--t4); }
 .path.prac .path-icon { background: var(--surface); color: var(--ink); }
-.path .go { margin-top: auto; font-weight: 500; color: var(--ink); }
+.path .go { font-weight: 500; color: var(--ink); }
 
 /* Intro walkthrough */
 .intro { min-height: 440px; display: flex; flex-direction: column; gap: 20px; }
@@ -281,23 +281,15 @@ $("#brand").onclick = () => store.get("email") ? choosePath() : welcome();
 /* ---------- 1. Welcome ---------- */
 function welcome() {
   keyHandler = null; topbar();
-  show(`<div class="card stack" style="gap:22px">
-    <span class="eyebrow">Claude Certified Architect · Foundations</span>
-    <h1 class="hero-title">Get ready for <span class="hl">CCAR-F</span>, one card at a time.</h1>
-    <p class="lede">Learn the ideas with gentle questions, or get exam-style reps with traps that make you think. Enter your email to begin.</p>
-    <div class="facts">
-      <div class="fact"><b>60</b><span>questions</span></div>
-      <div class="fact"><b>120</b><span>minutes</span></div>
-      <div class="fact"><b>720</b><span>to pass, of 1,000</span></div>
-      <div class="fact"><b>4 of 6</b><span>scenarios drawn</span></div>
-    </div>
+  show(`<div class="card stack" style="gap:20px">
+    <h1 class="hero-title">Prep for <span class="hl">CCA-F</span></h1>
     <form id="emailForm" class="stack" novalidate>
       <div class="field">
         <label for="email">Email</label>
         <input id="email" type="email" autocomplete="email" placeholder="you@example.com" value="${esc(store.get("email") || "")}">
         <span class="err" id="emailErr"></span>
       </div>
-      <div class="row"><button class="btn" type="submit">Next</button><span class="hint">Your email stays in this browser.</span></div>
+      <div class="row"><button class="btn" type="submit">Next</button></div>
     </form></div>`);
   const input = $("#email"); input.focus();
   $("#emailForm").onsubmit = e => {
@@ -312,22 +304,18 @@ function welcome() {
 function choosePath() {
   keyHandler = null; topbar();
   const nL = DATA.learner.concepts.length, nP = DATA.practitioner.scenarios.reduce((s, x) => s + x.questions.length, 0);
-  show(`<div class="stack" style="gap:22px">
-    <div class="stack" style="gap:8px"><span class="eyebrow">Choose your path</span><h1 style="font-size:clamp(1.8rem,6vw,2.4rem)">How do you want to study today?</h1></div>
+  show(`<div class="stack" style="gap:16px">
+    <h1 style="font-size:clamp(1.6rem,6vw,2.2rem)">Choose your path</h1>
     <div class="paths">
       <button class="path learn" id="goLearn" type="button">
         <span class="path-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3Z"/></svg></span>
-        <h2>Learner</h2>
-        <p>Build the ideas from the ground up with friendly questions.</p>
-        <ul><li>A one-minute tour of the exam</li><li>${nL} core concepts, plain explanations</li><li>Miss one and you get a second try</li></ul>
-        <span class="go">Start learning →</span>
+        <span class="path-text"><h2>Learner</h2><p>${nL} concepts, friendly questions</p></span>
+        <span class="go" aria-hidden="true">→</span>
       </button>
       <button class="path prac" id="goPrac" type="button">
         <span class="path-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg></span>
-        <h2>Practitioner</h2>
-        <p>Exam-style scenario reps for when you are close to test day.</p>
-        <ul><li>${nP} scenario questions, single and multi-select</li><li>Every option explained, every trap named</li><li>Optional timer at exam pace</li></ul>
-        <span class="go">Start reps →</span>
+        <span class="path-text"><h2>Practitioner</h2><p>${nP} exam-style questions</p></span>
+        <span class="go" aria-hidden="true">→</span>
       </button>
     </div></div>`);
   $("#goLearn").onclick = () => intro(0);
