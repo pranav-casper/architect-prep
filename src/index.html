@@ -44,8 +44,8 @@ p { margin: 0; }
 
 .top { max-width: 720px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-block: 20px 8px; }
 .brand { white-space: nowrap; display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 500; letter-spacing: -.01em; font-size: 1.05rem; background: none; border: 0; cursor: pointer; padding: 0; }
-.brand-mark { width: 26px; height: 26px; border-radius: 8px; background: var(--ink); position: relative; }
-.brand-mark::after { content: ""; position: absolute; width: 10px; height: 10px; border-radius: 50%; background: var(--t4); right: -3px; top: -3px; }
+.brand-mark { width: 28px; height: 28px; display: block; }
+.brand-mark svg, .hero-mark svg { width: 100%; height: 100%; display: block; }
 .top-right { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: .85rem; min-width: 0; }
 .top-right .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
 
@@ -71,6 +71,16 @@ main { max-width: 720px; margin: 0 auto; }
 .link { background: none; border: 0; padding: 0; color: var(--muted); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; font-size: .85rem; }
 
 /* Welcome */
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.hero { min-height: calc(100svh - 120px); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 28px; position: relative; isolation: isolate; }
+.hero::before { content: ""; position: absolute; inset: 10% -10%; z-index: -1; background: radial-gradient(40% 45% at 35% 45%, var(--t4), transparent 70%), radial-gradient(35% 40% at 68% 55%, var(--t1), transparent 70%); filter: blur(30px); opacity: .9; }
+.hero-mark { width: 72px; height: 72px; display: block; border-radius: 18px; box-shadow: 0 14px 36px rgba(60,46,42,.18); }
+.hero .hero-title { font-size: clamp(2.8rem, 11vw, 5rem); }
+.hero-form { width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: 8px; }
+.hero-input { display: flex; flex-direction: row; align-items: center; gap: 6px; background: var(--surface); border: 1.5px solid var(--line); border-radius: 999px; padding: 6px; box-shadow: var(--shadow); transition: border-color .15s; }
+.hero-input:focus-within { border-color: var(--ink); }
+.hero-input input { text-align: left; flex: 1; min-width: 0; width: auto; font-size: 1rem; outline: none; border: 0; background: transparent; border-radius: 999px; padding: 10px 14px; }
+.hero-input .btn { flex: none; }
 .hero-title { font-size: clamp(2.3rem, 7.5vw, 3.6rem); font-weight: 400; letter-spacing: -.035em; line-height: 1.05; }
 .hero-title .hl { background: var(--t4); border-radius: .18em; padding: 0 .14em; }
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -212,7 +222,7 @@ main { max-width: 720px; margin: 0 auto; }
 </style>
 
 <header class="top">
-  <button class="brand" id="brand" type="button" aria-label="Back to start"><span class="brand-mark" aria-hidden="true"></span>Architect Prep</button>
+  <button class="brand" id="brand" type="button" aria-label="Back to start"><span class="brand-mark"><svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#3c2e2a"/><path d="M18 47 32 16l14 31" fill="none" stroke="#fdfdfb" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M23 39q9-9 18 0" fill="none" stroke="#fdfdfb" stroke-width="4" stroke-linecap="round"/><circle cx="32" cy="15" r="5.5" fill="#e6e3ee" stroke="#3c2e2a" stroke-width="2.5"/></svg></span>Architect Prep</button>
   <div class="top-right" id="topRight"></div>
 </header>
 <main id="app" aria-live="polite"></main>
@@ -282,16 +292,18 @@ $("#brand").onclick = () => store.get("email") ? choosePath() : welcome();
 /* ---------- 1. Welcome ---------- */
 function welcome() {
   keyHandler = null; topbar();
-  show(`<div class="card stack" style="gap:20px">
+  show(`<section class="hero">
+    <span class="hero-mark"><svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="16" fill="#3c2e2a"/><path d="M18 47 32 16l14 31" fill="none" stroke="#fdfdfb" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/><path d="M23 39q9-9 18 0" fill="none" stroke="#fdfdfb" stroke-width="4" stroke-linecap="round"/><circle cx="32" cy="15" r="5.5" fill="#e6e3ee" stroke="#3c2e2a" stroke-width="2.5"/></svg></span>
     <h1 class="hero-title">Prep for <span class="hl">CCA-F</span></h1>
-    <form id="emailForm" class="stack" novalidate>
-      <div class="field">
-        <label for="email">Email</label>
+    <form id="emailForm" class="hero-form" novalidate>
+      <label for="email" class="sr">Email</label>
+      <div class="hero-input">
         <input id="email" type="email" autocomplete="email" placeholder="you@example.com" value="${esc(store.get("email") || "")}">
-        <span class="err" id="emailErr"></span>
+        <button class="btn" type="submit">Start →</button>
       </div>
-      <div class="row"><button class="btn" type="submit">Next</button></div>
-    </form></div>`);
+      <span class="err" id="emailErr"></span>
+    </form>
+  </section>`);
   const input = $("#email"); input.focus();
   $("#emailForm").onsubmit = e => {
     e.preventDefault();
