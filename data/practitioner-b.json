@@ -1,0 +1,637 @@
+{
+ "scenarios": [
+  {
+   "id": "s4",
+   "title": "Developer Productivity with Claude",
+   "setup": "Your platform team is building an internal developer assistant with the Claude Agent SDK. Engineers use it to explore unfamiliar repositories, understand a 15-year-old billing monolith, generate service boilerplate, and automate repetitive chores. The agent uses the built-in Read, Write, Edit, Bash, Grep and Glob tools and connects to several MCP servers, including an internal code-search server and the team's Jira instance. Sessions often run for hours across large codebases.",
+   "questions": [
+    {
+     "id": "s4q1",
+     "domain": 2,
+     "type": "single",
+     "prompt": "An engineer asks the agent to find every caller of the deprecated function formatLegacyDate before removing it. The function is also re-exported under two other names from utils/index.ts and shared/dates.ts. Session logs show the agent ran Glob on **/*.ts, then called Read on 212 files one after another until the context window filled, and it still missed callers that used the re-exported names. What is the most effective change to this exploration strategy?",
+     "options": [
+      {
+       "text": "Run /compact automatically after every 25 Read calls so the agent can work through all 212 files without filling the context window before it reaches the callers.",
+       "correct": false,
+       "trap": "symptom-fix",
+       "rationale": "Compaction frees space but keeps the read-everything strategy. The agent still has no reason to look for the re-exported names, so the missed callers stay missed."
+      },
+      {
+       "text": "Build an MCP server that parses the repository into an AST call graph and exposes a find_callers tool, so the agent no longer opens files to locate usages.",
+       "correct": false,
+       "trap": "over-engineering",
+       "rationale": "A call-graph service could work eventually, but it is a large build for a problem the built-in tools already solve when used in the right order."
+      },
+      {
+       "text": "Grep for formatLegacyDate to find where it is defined and re-exported, collect each exported alias, then Grep for every alias and Read only the matching files.",
+       "correct": true,
+       "trap": null,
+       "rationale": "Grep finds content such as function names, and tracing wrapper modules means first finding every exported name and then searching for each one. Reading only the matches keeps context small."
+      },
+      {
+       "text": "Add a system prompt rule limiting the agent to 30 Read calls per task and telling it to open files whose names contain date or format before any others.",
+       "correct": false,
+       "trap": "system-prompt-enforcement",
+       "rationale": "A prose cap is followed only probabilistically, and filename guessing has nothing to do with where callers live. Aliased callers in unrelated files would still be missed."
+      }
+     ],
+     "takeaway": "Build codebase understanding incrementally with Grep for content and Read for follow-up, and trace re-exports by searching for each exported name."
+    },
+    {
+     "id": "s4q2",
+     "domain": 2,
+     "type": "single",
+     "prompt": "The team added an MCP server that exposes search_symbols. It queries a precomputed index covering 31 repositories and returns definitions, references, and the owning service for any symbol. Its description reads \"Searches code.\" Traces show the agent uses the built-in Grep for 90% of symbol lookups, which misses references in the 30 repositories that are not checked out locally. What should you change first?",
+     "options": [
+      {
+       "text": "Rewrite the search_symbols description to say it covers all 31 indexed repositories, returns definitions and references with owning service, and suits symbol lookups better than Grep.",
+       "correct": true,
+       "trap": null,
+       "rationale": "Tool descriptions are the main signal the model uses to choose tools. A two-word description gives it no reason to prefer the MCP tool over a familiar built-in one."
+      },
+      {
+       "text": "Remove Grep from the agent's allowedTools so that search_symbols becomes the only search option available whenever the agent needs to locate a function, class, or constant.",
+       "correct": false,
+       "trap": "wrong-scope",
+       "rationale": "Grep is still the right tool for error strings, config values, and local content. Taking it away fixes one routing problem by breaking many legitimate uses."
+      },
+      {
+       "text": "Add six few-shot examples to the system prompt showing symbol lookups routed to search_symbols, covering functions, classes, constants, and imports that cross service boundaries.",
+       "correct": false,
+       "trap": "few-shot-overload",
+       "rationale": "Examples add tokens and patch selection for the cases shown, but the underlying gap is that the tool's description never explains what it can do."
+      },
+      {
+       "text": "Add a PreToolUse hook that inspects each Grep pattern and rewrites the call to search_symbols whenever the pattern looks like an identifier rather than free text.",
+       "correct": false,
+       "trap": "over-engineering",
+       "rationale": "Silently rewriting calls adds brittle pattern logic and hides the agent's real choices. Improving the description is the low-effort first step."
+      }
+     ],
+     "takeaway": "When an agent prefers a built-in tool over a more capable MCP tool, enrich the MCP tool's description before adding routing machinery."
+    },
+    {
+     "id": "s4q3",
+     "domain": 2,
+     "type": "multi",
+     "prompt": "Every engineer's agent sessions should use the community Jira MCP server, authenticated with that engineer's own API token. Separately, one staff engineer wants to trial an experimental MCP server she wrote for querying profiling data on her laptop. Which configuration choices are appropriate? Select TWO.",
+     "options": [
+      {
+       "text": "Write a custom Jira MCP server in-house so the team controls the tool names and descriptions, and register it in the project .mcp.json alongside the code-search server.",
+       "correct": false,
+       "trap": "over-engineering",
+       "rationale": "Jira is a standard integration with an existing community server. Custom servers are worth building for team-specific workflows, not to rename tools."
+      },
+      {
+       "text": "Add the community Jira server to the project .mcp.json committed to the repository and reference the credential as ${JIRA_API_TOKEN} so each engineer supplies their own.",
+       "correct": true,
+       "trap": null,
+       "rationale": "Project-scoped .mcp.json shares the server through version control, and environment variable expansion keeps each engineer's token out of the repository."
+      },
+      {
+       "text": "Have each engineer add the Jira server to their own ~/.claude.json, and paste the exact configuration block into the project CLAUDE.md so new hires can copy it.",
+       "correct": false,
+       "trap": "wrong-scope",
+       "rationale": "User-level config is not shared through version control, so copies drift. CLAUDE.md holds instructions for Claude, not a distribution channel for server configuration."
+      },
+      {
+       "text": "Register the experimental profiling server in the project .mcp.json too, so its tools are discovered at connection time and any teammate can try them when needed.",
+       "correct": false,
+       "trap": "tool-bloat",
+       "rationale": "All configured servers' tools are loaded at once, so every teammate's agent gets extra tools it does not need, and they point at data that only exists on one laptop."
+      },
+      {
+       "text": "Have the staff engineer register her experimental profiling server in her user-level ~/.claude.json so it is available in her sessions without touching shared config.",
+       "correct": true,
+       "trap": null,
+       "rationale": "User-scoped ~/.claude.json is the place for personal or experimental servers. It affects only her sessions and keeps the team's tool set unchanged."
+      }
+     ],
+     "takeaway": "Shared servers go in project .mcp.json with environment variable expansion for secrets, and personal or experimental servers go in ~/.claude.json."
+    },
+    {
+     "id": "s4q4",
+     "domain": 1,
+     "type": "single",
+     "prompt": "Yesterday an engineer ran a long investigation of the legacy billing module in a session named billing-audit. The agent read 40 files and built a detailed map of the invoice flow. This morning a teammate merged a refactor that changed 3 of those 40 files. The engineer wants to continue the investigation today. What is the best approach?",
+     "options": [
+      {
+       "text": "Start a new session and have the agent re-read all 40 files from scratch, because any resumed context could hold tool results that no longer match the code on disk.",
+       "correct": false,
+       "trap": "over-engineering",
+       "rationale": "Fresh starts make sense when most prior results are stale. Here 37 of 40 files are unchanged, so full re-exploration throws away valid work."
+      },
+      {
+       "text": "Resume with --resume billing-audit and carry on as before, since the agent will see the new contents of the changed files whenever it next reads them during exploration.",
+       "correct": false,
+       "trap": "symptom-fix",
+       "rationale": "The agent will keep reasoning from its earlier reads of those three files and has no reason to re-open them. Stale results quietly shape its conclusions."
+      },
+      {
+       "text": "Use fork_session on billing-audit to create a branch for the refactored code, keeping the original branch available to compare against the pre-refactor behavior.",
+       "correct": false,
+       "trap": "wrong-scope",
+       "rationale": "Forking creates divergent branches from a shared baseline for exploring alternatives. It does not tell either branch that files changed underneath it."
+      },
+      {
+       "text": "Resume with --resume billing-audit and tell the agent which three files the refactor changed, so it re-reads and re-analyzes those files before it continues the investigation.",
+       "correct": true,
+       "trap": null,
+       "rationale": "Most prior context is still valid, so resuming is efficient. Naming the changed files gives the agent a targeted re-analysis instead of a full re-exploration."
+      }
+     ],
+     "takeaway": "Resume when prior context is mostly valid and tell the agent exactly which files changed, and start fresh with a summary only when most results are stale."
+    },
+    {
+     "id": "s4q5",
+     "domain": 3,
+     "type": "single",
+     "prompt": "Engineers invoke a project skill, /map-service, that walks a service directory and prints an inventory of every module, class, and dependency. It often produces around 15,000 tokens of output. Engineers report that after running it, the rest of the session gets slower and the agent starts mixing inventory details into answers about their actual task. What change best addresses this?",
+     "options": [
+      {
+       "text": "Move the skill's instructions into the project CLAUDE.md so the mapping guidance loads at session start and engineers no longer need to invoke a separate skill to get it.",
+       "correct": false,
+       "trap": "wrong-scope",
+       "rationale": "CLAUDE.md loads in every session, so this adds context to every session and still produces the verbose inventory in the main conversation."
+      },
+      {
+       "text": "Add context: fork to the skill's SKILL.md frontmatter so the mapping runs in an isolated sub-agent context and only its final summary is returned to the main session.",
+       "correct": true,
+       "trap": null,
+       "rationale": "context: fork runs the skill in its own sub-agent context, so the 15,000 tokens of discovery output stay out of the main conversation."
+      },
+      {
+       "text": "Add allowed-tools: Read, Glob to the skill's frontmatter so the mapping cannot invoke Bash or Grep and therefore produces a smaller, more focused service inventory.",
+       "correct": false,
+       "trap": "wrong-scope",
+       "rationale": "allowed-tools restricts what the skill may do, which is useful for safety. It does not isolate output, and a Read-and-Glob inventory can be just as long."
+      },
+      {
+       "text": "Have engineers run /compact right after each /map-service invocation so the verbose inventory is condensed before they continue working on their actual task.",
+       "correct": false,
+       "trap": "symptom-fix",
+       "rationale": "Compaction is a manual cleanup step after the damage is done, and it can blur details the engineer needs. Isolating the skill avoids the pollution in the first place."
+      }
+     ],
+     "takeaway": "Use context: fork for skills that produce verbose or exploratory output so it does not pollute the main conversation."
+    },
+    {
+     "id": "s4q6",
+     "domain": 5,
+     "type": "single",
+     "prompt": "Three hours into exploring a legacy order-management codebase, the agent answers a question about retry behavior by describing \"typical patterns in services like this\" instead of the RetryPolicyRegistry and BackoffScheduler classes it found and analyzed in the first hour. Its earlier answers were specific and correct. What is the most effective change for long exploration sessions like this one?",
+     "options": [
+      {
+       "text": "Add a system prompt instruction reminding the agent to name the specific classes it discovered earlier and to avoid generic descriptions when it answers codebase questions.",
+       "correct": false,
+       "trap": "system-prompt-enforcement",
+       "rationale": "An instruction cannot bring back details that have degraded in a long context. The agent would follow it by naming whatever it still recalls, which may be wrong."
+      },
+      {
+       "text": "Increase max_tokens on each request so the agent has room to include the specific class details it discovered earlier when it writes long answers late in the session.",
+       "correct": false,
+       "trap": "symptom-fix",
+       "rationale": "max_tokens limits the length of the response. It has no effect on how well the model retains findings from hours earlier in the context."
+      },
+      {
+       "text": "Have the agent record key findings in a scratchpad file as it explores, and have it read that file back before answering later questions.",
+       "correct": true,
+       "trap": null,
+       "rationale": "Scratchpad files persist findings outside the degrading context, so later answers can draw on the exact classes discovered earlier."
+      },
+      {
+       "text": "Restart the session every 45 minutes and have the agent re-explore the codebase from the beginning, so its context is never older than the latest exploration pass.",
+       "correct": false,
+       "trap": "over-engineering",
+       "rationale": "This discards hours of valid work and repeats the most expensive phase. Persisting findings is far cheaper than repeated full exploration."
+      }
+     ],
+     "takeaway": "Counter context degradation in long exploration sessions by persisting key findings to a scratchpad file the agent re-reads."
+    }
+   ]
+  },
+  {
+   "id": "s5",
+   "title": "Claude Code for Continuous Integration",
+   "setup": "Your organization runs Claude Code in its CI/CD pipeline on every pull request. The pipeline invokes Claude Code non-interactively to review diffs, generate unit tests for changed code, and post findings as inline PR comments. Some checks block merging and others run on a nightly schedule. Engineering leadership measures success by how often developers act on the feedback rather than dismissing it.",
+   "questions": [
+    {
+     "id": "s5q1",
+     "domain": 3,
+     "type": "single",
+     "prompt": "The review step runs claude -p with a prompt that asks for findings as JSON. A script parses stdout and posts each finding as an inline comment. About 1 run in 12 fails to parse because the output is wrapped in a markdown code fence or starts with a sentence such as \"Here are the findings:\". What is the best fix?",
+     "options": [
+      {
+       "text": "Tighten the prompt to say the response must contain only raw JSON with no commentary or fences, and add a regex step that strips code fences before parsing.",
+       "correct": false,
+       "trap": "system-prompt-enforcement",
+       "rationale": "Prose instructions reduce the failure rate but never remove it, and the regex only covers the failure shapes you have already seen."
+      },
+      {
+       "text": "Pipe the review output into a second claude -p call whose only job is to convert the previous response into valid JSON before the posting script runs.",
+       "correct": false,
+       "trap": "over-engineering",
+       "rationale": "A second model call doubles cost and latency and can fail in the same way. The CLI already has a way to enforce structured output."
+      },
+      {
+       "text": "Add four examples of correctly formatted JSON findings to the project CLAUDE.md so CI-invoked sessions see exactly what output format they are expected to produce.",
+       "correct": false,
+       "trap": "few-shot-overload",
+       "rationale": "Examples improve consistency but still rely on the model choosing to comply. Parsing reliability in CI needs enforced structure, not more demonstrations."
+      },
+      {
+       "text": "Run the review with --output-format json and a --json-schema that describes each finding, then have the script parse that structured result instead of free text.",
+       "correct": true,
+       "trap": null,
+       "rationale": "These flags make Claude Code emit machine-parseable output that matches the schema, which is what automated posting of inline comments needs."
+      }
+     ],
+     "takeaway": "In CI, use --output-format json with --json-schema to get machine-parseable findings rather than asking for JSON in prose."
+    },
+    {
+     "id": "s5q2",
+     "domain": 4,
+     "type": "single",
+     "prompt": "The review reports five categories: security, correctness, performance, naming, and comment accuracy. Over a month, developers dismissed 71% of comment-accuracy findings, most of which flagged comments that were merely terse or loosely worded. A survey shows developers now also dismiss security findings without reading them. What should you do first?",
+     "options": [
+      {
+       "text": "Turn off the comment-accuracy category for now, and rewrite its criteria so it flags only comments whose described behavior contradicts what the code actually does.",
+       "correct": true,
+       "trap": null,
+       "rationale": "Pausing the noisy category restores trust in the accurate ones, and explicit categorical criteria are what actually improve precision."
+      },
+      {
+       "text": "Add an instruction to the review prompt telling Claude to be conservative and to report only findings it is highly confident about across all five categories.",
+       "correct": false,
+       "trap": "symptom-fix",
+       "rationale": "General instructions such as \"be conservative\" do not improve precision the way specific criteria do, and they risk suppressing real security findings."
+      },
+      {
+       "text": "Have Claude attach a 1 to 10 confidence score to each finding and suppress comment-accuracy findings scored below 8 before the pipeline posts them.",
+       "correct": false,
+       "trap": "self-review",
+       "rationale": "Self-reported confidence is poorly calibrated. The model is already confident about the terse-comment flags that developers dismiss."
+      },
+      {
+       "text": "Train a lightweight classifier on the month of dismissed findings and use it to filter out comments developers are likely to dismiss before they are posted.",
+       "correct": false,
+       "trap": "over-engineering",
+       "rationale": "A classifier needs labeled data and upkeep, and it hides a prompt problem instead of fixing the vague criteria that create the noise."
+      }
+     ],
+     "takeaway": "Restore developer trust by disabling high false positive categories while replacing vague instructions with explicit reporting criteria."
+    },
+    {
+     "id": "s5q3",
+     "domain": 4,
+     "type": "single",
+     "prompt": "A pipeline step uses one Claude Code session to write a fix for a failing integration test. In the same session it then asks Claude to review the fix for bugs before opening a PR. Human reviewers keep finding off-by-one and null-handling bugs that this review step approved. How should you restructure the review step?",
+     "options": [
+      {
+       "text": "Enable extended thinking for the review turn in the same session so Claude reasons more carefully about edge cases in the code it just generated before approving it.",
+       "correct": false,
+       "trap": "self-review",
+       "rationale": "More reasoning inside the same session still starts from the generator's own assumptions, so it tends to confirm the decisions it already made."
+      },
+      {
+       "text": "Add a review checklist to the prompt telling Claude to assume the fix contains bugs and to critique it as a skeptical senior engineer would before approving it.",
+       "correct": false,
+       "trap": "system-prompt-enforcement",
+       "rationale": "A skeptical persona is still a prompt applied to a session that holds the reasoning behind the fix. It does not remove that context."
+      },
+      {
+       "text": "Review the fix with a separate Claude instance that receives only the diff and the failing test, without the generating session's reasoning.",
+       "correct": true,
+       "trap": null,
+       "rationale": "An independent instance has no prior reasoning to defend, so it is more likely to question the edge cases the generator glossed over."
+      },
+      {
+       "text": "Move the review to a nightly Message Batches job that re-reviews every generated fix, so a fuller analysis can run without slowing down the PR pipeline.",
+       "correct": false,
+       "trap": "batch-for-blocking",
+       "rationale": "The review gates opening the PR, so it is blocking work. A batch job with no latency guarantee cannot serve as that gate."
+      }
+     ],
+     "takeaway": "Use an independent review instance without the generator's context, because a session is poor at questioning its own output."
+    },
+    {
+     "id": "s5q4",
+     "domain": 3,
+     "type": "multi",
+     "prompt": "Two complaints arrive about the PR pipeline. When a developer pushes new commits, the re-run review posts a fresh copy of every finding, including ones already raised on earlier commits. Separately, the test-generation step keeps proposing test cases that already exist in the module's test file. Which changes address these complaints? Select TWO.",
+     "options": [
+      {
+       "text": "Pass the findings from the previous review run into the prompt, and instruct Claude to report only issues that are new or still unaddressed since that run.",
+       "correct": true,
+       "trap": null,
+       "rationale": "A CI run has no memory of earlier runs, so the prior findings must be supplied in context. Then Claude can skip what was already raised."
+      },
+      {
+       "text": "Add a line to the project CLAUDE.md telling Claude never to repeat a comment it made on the pull request before and to skip any scenario it has tested already.",
+       "correct": false,
+       "trap": "system-prompt-enforcement",
+       "rationale": "The instruction refers to history the CI session cannot see. Without prior findings or tests in context, Claude has nothing to compare against."
+      },
+      {
+       "text": "Move both the re-run review and test generation to the Message Batches API, and deduplicate the results by custom_id before anything is posted to the PR.",
+       "correct": false,
+       "trap": "batch-for-blocking",
+       "rationale": "PR feedback is expected promptly and batches have no latency guarantee. custom_id correlates requests with responses and does nothing to detect duplicate findings."
+      },
+      {
+       "text": "Include the module's existing test file in the test-generation context, so Claude can see which scenarios are already covered before it proposes any new ones.",
+       "correct": true,
+       "trap": null,
+       "rationale": "Claude can only avoid duplicate scenarios it can see. Providing existing tests in context is the direct fix for redundant test suggestions."
+      },
+      {
+       "text": "Hash each comment body and drop any new comment whose hash matches one already on the PR, and do the same for generated test names before they are committed.",
+       "correct": false,
+       "trap": "symptom-fix",
+       "rationale": "Exact-match hashing misses the same finding or test worded differently, so duplicates still get through while the cause stays in place."
+      }
+     ],
+     "takeaway": "Give CI runs the context they lack, prior findings for re-reviews and existing tests for test generation, instead of filtering output afterward."
+    },
+    {
+     "id": "s5q5",
+     "domain": 4,
+     "type": "single",
+     "prompt": "To cut costs, the team moved its nightly test-generation job to the Message Batches API. In the old synchronous version, Claude wrote tests, called a run_tests tool, read the failures, and revised the tests over several turns. Since the move, batch results contain test files that were never executed, and about 30% of them fail when CI runs them the next morning. What is the best way to keep the cost savings?",
+     "options": [
+      {
+       "text": "Set tool_choice to force run_tests in each batch request so that Claude is required to execute the generated tests before the batch request is allowed to complete.",
+       "correct": false,
+       "trap": "symptom-fix",
+       "rationale": "Forcing the tool only makes Claude emit a tool_use block. Nothing executes it and returns the result within a batch request, so the tests still never run."
+      },
+      {
+       "text": "Batch only the first-pass generation, run the generated tests in your own job runner, and submit a follow-up batch with the failing tests and their error output.",
+       "correct": true,
+       "trap": null,
+       "rationale": "The Batches API does not support multi-turn tool calling inside one request. Running tests between batches restores the feedback loop while keeping the discount."
+      },
+      {
+       "text": "Move the nightly job back to synchronous calls, because tests that need execution feedback cannot be produced with batch processing in any form or configuration.",
+       "correct": false,
+       "trap": "wrong-scope",
+       "rationale": "This gives up the savings for a job that is latency tolerant. The limitation is per request, and the loop can be rebuilt across successive batches."
+      },
+      {
+       "text": "Raise max_tokens in each batch request so Claude has room to simulate the test run in its own reasoning and correct failing assertions before returning a file.",
+       "correct": false,
+       "trap": "self-review",
+       "rationale": "Mentally simulating a test run is not executing it. The model checking its own output misses the same failures that real execution would expose."
+      }
+     ],
+     "takeaway": "The Batches API cannot run tools mid-request, so latency-tolerant work that needs tool feedback must loop across batches or stay synchronous."
+    },
+    {
+     "id": "s5q6",
+     "domain": 3,
+     "type": "single",
+     "prompt": "CI-invoked test generation produces many low-value tests, such as assertions on simple getters and constructors. It also builds database objects by hand even though the repository provides factory fixtures in tests/factories/. Developers delete most of the generated tests. Where should guidance on what makes a test valuable and which fixtures to use live?",
+     "options": [
+      {
+       "text": "In ~/.claude/CLAUDE.md baked into the CI runner image, so every pipeline run loads the testing standards without adding files developers must maintain in the repo.",
+       "correct": false,
+       "trap": "wrong-scope",
+       "rationale": "User-level memory on a runner image is invisible to developers and not versioned with the code, so it drifts from the fixtures it describes."
+      },
+      {
+       "text": "In the -p prompt string of the pipeline script, together with ten example tests that cover every fixture factory and every assertion style the team uses.",
+       "correct": false,
+       "trap": "few-shot-overload",
+       "rationale": "Ten full examples bloat every invocation and teach by imitation rather than stating the criteria. They are also buried in a script instead of shared project context."
+      },
+      {
+       "text": "In a post-generation script that runs coverage and deletes any generated test that does not raise line coverage before the tests are committed to the branch.",
+       "correct": false,
+       "trap": "symptom-fix",
+       "rationale": "Filtering after generation wastes the work and treats coverage as value. Claude still has no idea which fixtures to use or what the team considers worth testing."
+      },
+      {
+       "text": "In the project CLAUDE.md, documenting the team's criteria for valuable tests and the fixture factories that exist, so CI-invoked Claude Code reads them.",
+       "correct": true,
+       "trap": null,
+       "rationale": "Project CLAUDE.md is how CI-invoked Claude Code receives project context such as testing standards and fixture conventions, and it is versioned with the code."
+      }
+     ],
+     "takeaway": "Document testing standards and available fixtures in the project CLAUDE.md so CI-invoked Claude Code generates higher-value tests."
+    }
+   ]
+  },
+  {
+   "id": "s6",
+   "title": "Structured Data Extraction",
+   "setup": "You are building a pipeline that extracts structured data from vendor invoices, receipts, and supplier contracts using the Claude API. Each document is sent with extraction tools whose input schemas define the output, and a validator checks every result before it is written to the finance system. The pipeline processes about 40,000 documents a month, mostly overnight, and a small team reviews flagged extractions by hand.",
+   "questions": [
+    {
+     "id": "s6q1",
+     "domain": 4,
+     "type": "single",
+     "prompt": "About 18% of invoices from small vendors have no purchase order number. The extract_invoice schema marks po_number as a required string. An audit shows that for these invoices the model returns values such as \"PO-0000\" or repeats the invoice number, which then fail matching in the finance system. What is the most effective fix?",
+     "options": [
+      {
+       "text": "Make po_number nullable in the schema and allow null when the invoice does not contain a purchase order number.",
+       "correct": true,
+       "trap": null,
+       "rationale": "A required field pressures the model to produce something. Making it nullable lets the model report absence honestly instead of fabricating a value."
+      },
+      {
+       "text": "Add a system prompt instruction stating that purchase order numbers must never be invented and must be copied exactly as printed.",
+       "correct": false,
+       "trap": "system-prompt-enforcement",
+       "rationale": "The schema still demands a string, so the instruction and the schema conflict. The model has no valid way to comply when the value is missing."
+      },
+      {
+       "text": "Validate po_number against the ERP and, on a mismatch, retry with the validation error appended so the model can correct it.",
+       "correct": false,
+       "trap": "symptom-fix",
+       "rationale": "Retry with feedback works for format errors, not missing information. No retry can find a PO number that is not on the invoice."
+      },
+      {
+       "text": "Add eight few-shot examples of invoices without a purchase order that show the model writing NONE into the po_number field.",
+       "correct": false,
+       "trap": "few-shot-overload",
+       "rationale": "This trains a sentinel string into a required field, which downstream systems must now special-case. The schema remains the actual problem."
+      }
+     ],
+     "takeaway": "Make schema fields nullable when source documents may lack the information, so the model is not pushed to fabricate values."
+    },
+    {
+     "id": "s6q2",
+     "domain": 4,
+     "type": "single",
+     "prompt": "Extraction uses tool_use with a strict schema, and no JSON syntax errors have occurred in months. However, the validator finds that in 6% of invoices the extracted line_items amounts do not add up to the extracted total. In most of these cases a line item was split across a page break. How should you improve accuracy for these invoices?",
+     "options": [
+      {
+       "text": "Set tool_choice to force the extract_invoice tool on every invoice request so the model is held to the exact schema whenever it emits line items.",
+       "correct": false,
+       "trap": "wrong-scope",
+       "rationale": "Schema compliance is already guaranteed. Forcing a specific tool controls which tool is called, not whether the numbers inside it are semantically right."
+      },
+      {
+       "text": "Add an instruction to the same request asking the model to double-check that its line items add up to the total before it calls the extraction tool.",
+       "correct": false,
+       "trap": "self-review",
+       "rationale": "Asking the model to check itself in the same pass gives it no new information. It is the same reasoning that split the line item in the first place."
+      },
+      {
+       "text": "When validation fails, send a follow-up request with the original document, the failed extraction, and the specific sum mismatch, asking for a correction.",
+       "correct": true,
+       "trap": null,
+       "rationale": "Retry with specific error feedback works well for structural mistakes like a split line item, because the information is present and the error tells the model where to look."
+      },
+      {
+       "text": "Retry each failed invoice up to three times with the original request unchanged, and keep the first extraction whose line items happen to sum to the total.",
+       "correct": false,
+       "trap": "symptom-fix",
+       "rationale": "Blind retries give the model no hint about what went wrong, and accepting whichever run sums correctly can accept a different error that happens to balance."
+      }
+     ],
+     "takeaway": "Tool use removes syntax errors but not semantic ones, which are best fixed with retries that include the document, the failed output, and the specific validation error."
+    },
+    {
+     "id": "s6q3",
+     "domain": 4,
+     "type": "single",
+     "prompt": "Documents arrive unlabeled and may be invoices, receipts, or contracts. Each request includes three tools, extract_invoice, extract_receipt, and extract_contract, with tool_choice set to \"auto\". In about 4% of requests the model responds with a prose summary of the document instead of calling a tool, and the pipeline drops those documents. What is the best fix?",
+     "options": [
+      {
+       "text": "Force tool_choice to extract_invoice, since invoices are the most common document type, and send any result that does not fit to a second classification pass.",
+       "correct": false,
+       "trap": "wrong-scope",
+       "rationale": "Forcing one named tool removes the model's ability to pick the right schema for receipts and contracts, which creates a new class of errors."
+      },
+      {
+       "text": "Set tool_choice to \"any\" so the model must call one of the three extraction tools while it still chooses which schema fits the document.",
+       "correct": true,
+       "trap": null,
+       "rationale": "\"any\" guarantees a tool call and therefore structured output, while leaving the choice of schema to the model when the document type is unknown."
+      },
+      {
+       "text": "Add a sentence to the system prompt saying the model must call exactly one extraction tool for every document and must never answer in plain text.",
+       "correct": false,
+       "trap": "system-prompt-enforcement",
+       "rationale": "This lowers the rate of prose replies but cannot remove it. tool_choice enforces the behavior at the API level instead."
+      },
+      {
+       "text": "Scan each reply for phrases such as \"this document appears to be\" and, when one is found, resend the request with a reminder to use an extraction tool.",
+       "correct": false,
+       "trap": "text-signal-loops",
+       "rationale": "Parsing natural-language text to drive control flow is fragile, and new phrasings slip through. The API exposes a setting that prevents the text reply."
+      }
+     ],
+     "takeaway": "Use tool_choice \"any\" to guarantee a tool call when several extraction schemas exist and the document type is unknown."
+    },
+    {
+     "id": "s6q4",
+     "domain": 5,
+     "type": "multi",
+     "prompt": "After three months, the pipeline shows 97% field-level accuracy against human review. Finance wants to stop human review for every extraction the model marks as high confidence. Before you agree, which steps should you take? Select TWO.",
+     "options": [
+      {
+       "text": "Approve the change for all document types, since 97% clears the 95% target, and add a monthly reconciliation check to catch any rise in errors afterward.",
+       "correct": false,
+       "trap": "wrong-scope",
+       "rationale": "An aggregate figure can hide a document type or field that performs far worse. A reconciliation check catches errors only after they have reached the books."
+      },
+      {
+       "text": "Have the model output a confidence score for each field, and skip review for any document where every field scores 0.9 or above, the threshold finance proposed.",
+       "correct": false,
+       "trap": "self-review",
+       "rationale": "Field-level scores are useful only once calibrated. A threshold picked by finance, never checked against a labeled validation set, treats raw self-reported confidence as accuracy."
+      },
+      {
+       "text": "Break accuracy down by document type and by field to confirm that no segment, such as handwritten receipts or contract dates, is far below the aggregate.",
+       "correct": true,
+       "trap": null,
+       "rationale": "Aggregate accuracy can mask weak segments. Validating by document type and field is required before reducing review for any of them."
+      },
+      {
+       "text": "Train a separate model on three months of review outcomes to predict which extractions contain errors, and use its scores in place of human review.",
+       "correct": false,
+       "trap": "over-engineering",
+       "rationale": "This adds a new model to maintain and still lacks the segment analysis and ongoing sampling that show whether automation is safe."
+      },
+      {
+       "text": "Keep reviewing a stratified random sample of high-confidence extractions so error rates stay measured and new error patterns are caught as they appear.",
+       "correct": true,
+       "trap": null,
+       "rationale": "Stratified sampling of high-confidence output keeps measuring real error rates and surfaces novel failure patterns after review is reduced."
+      }
+     ],
+     "takeaway": "Before automating high-confidence extractions, validate accuracy per document type and field and keep stratified sampling in place."
+    },
+    {
+     "id": "s6q5",
+     "domain": 4,
+     "type": "single",
+     "prompt": "The monthly backlog of 40,000 documents is submitted through the Message Batches API. When results return, 1,150 requests have errored because their documents, mostly long supplier contracts, exceeded the context limit. The other results are valid. How should you handle this?",
+     "options": [
+      {
+       "text": "Resubmit the entire batch with max_tokens raised to the model's maximum so the long contracts can complete, and replace the earlier results with the new set.",
+       "correct": false,
+       "trap": "symptom-fix",
+       "rationale": "max_tokens caps output length and does not change the input context limit. Resubmitting 38,850 valid requests also wastes the cost the batch saved."
+      },
+      {
+       "text": "Move contract extraction to synchronous API calls for good, since the Batches API cannot accept documents of that size in any configuration you could submit.",
+       "correct": false,
+       "trap": "over-engineering",
+       "rationale": "Synchronous calls face the same context limit and give up the batch discount for latency-tolerant work. The failure is about document size, not the API."
+      },
+      {
+       "text": "Add a system prompt instruction telling the model to skip the less relevant parts of long contracts, then resubmit only the failed requests.",
+       "correct": false,
+       "trap": "system-prompt-enforcement",
+       "rationale": "The request fails before the model reads anything because the input is too large. No instruction can make the model skip input it never receives."
+      },
+      {
+       "text": "Use each failed request's custom_id to find its document, split those documents into chunks, and resubmit only them in a new batch.",
+       "correct": true,
+       "trap": null,
+       "rationale": "custom_id identifies exactly which documents failed, and chunking addresses why. Resubmitting only those keeps the valid results and the savings."
+      }
+     ],
+     "takeaway": "Handle batch failures by resubmitting only the failed custom_ids with a change that addresses the failure, such as chunking oversized documents."
+    },
+    {
+     "id": "s6q6",
+     "domain": 5,
+     "type": "single",
+     "prompt": "On some supplier contracts, the cover summary states one total contract value while the pricing schedule in an appendix adds up to a different amount. The schema has a single contract_value field. Reviewers see the model return the summary figure on some contracts and the schedule figure on others. What is the best change to the extraction design?",
+     "options": [
+      {
+       "text": "Extract both figures along with their source locations, add a conflict_detected boolean, and route contracts whose two figures disagree to human review.",
+       "correct": true,
+       "trap": null,
+       "rationale": "Recording both values with provenance and flagging the conflict lets a person decide, rather than having the model silently pick one."
+      },
+      {
+       "text": "Add a rule to the prompt that the pricing schedule is authoritative, so the model reports only the appendix total and ignores the cover summary figure.",
+       "correct": false,
+       "trap": "symptom-fix",
+       "rationale": "This makes the output consistent but hides a real discrepancy. Sometimes the schedule is the figure that is wrong, and finance never learns there was a conflict."
+      },
+      {
+       "text": "Run the extraction three times at different temperatures and store whichever contract value appears in at least two of the three runs as the final figure.",
+       "correct": false,
+       "trap": "over-engineering",
+       "rationale": "Majority voting triples cost and still picks one value arbitrarily. Both numbers are genuinely in the document, so voting cannot resolve the conflict."
+      },
+      {
+       "text": "Ask the model in a second turn of the same conversation to reconsider its contract_value and confirm which figure it believes is correct before saving it.",
+       "correct": false,
+       "trap": "self-review",
+       "rationale": "Reconsidering in the same conversation tends to confirm the first answer, and either way the model is choosing a value it has no basis to choose."
+      }
+     ],
+     "takeaway": "When a source contains conflicting values, capture both with their locations and flag the conflict instead of letting the model pick one."
+    }
+   ]
+  }
+ ]
+}
