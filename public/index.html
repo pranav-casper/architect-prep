@@ -57,7 +57,7 @@ p { margin: 0; }
 .brand-mark { width: 28px; height: 28px; display: block; }
 .brand-mark svg, .hero-mark svg { width: 100%; height: 100%; display: block; }
 .top-right { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: .85rem; min-width: 0; }
-.top-right .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
+.top-right .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 52vw; }
 
 main { max-width: 720px; margin: 0 auto; }
 .screen { animation: rise .45s cubic-bezier(.2,.8,.2,1) both; }
@@ -106,9 +106,10 @@ main { max-width: 720px; margin: 0 auto; }
 @media (max-width: 520px) { .facts { grid-template-columns: repeat(2, 1fr); } }
 
 /* Path choice */
-.paths { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.path-screen { min-height: calc(100svh - 140px); display: flex; flex-direction: column; justify-content: center; gap: 28px; padding-block: 12px; }
+.paths { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
 @media (max-width: 600px) { .paths { grid-template-columns: 1fr; } }
-.path { text-align: left; cursor: pointer; border: 1.5px solid transparent; background: var(--surface); border-radius: 18px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; transition: transform .2s, border-color .2s, box-shadow .2s; box-shadow: var(--shadow); }
+.path { text-align: left; cursor: pointer; border: 1.5px solid transparent; background: var(--surface); border-radius: 20px; padding: 18px 20px; display: flex; flex-direction: column; gap: 8px; transition: transform .2s, border-color .2s, box-shadow .2s; box-shadow: var(--shadow); }
 .path:hover { transform: translateY(-3px); border-color: var(--ink); }
 .path-head { display: flex; align-items: center; gap: 10px; }
 .path h2 { font-size: 1.2rem; }
@@ -327,8 +328,8 @@ function welcome() {
 function choosePath() {
   keyHandler = null; topbar();
   const nL = DATA.learner.concepts.length, nP = DATA.practitioner.scenarios.reduce((s, x) => s + x.questions.length, 0);
-  show(`<div class="stack" style="gap:14px">
-    <div class="stack" style="gap:4px"><span class="eyebrow">Choose your path</span><h1 style="font-size:clamp(1.4rem,5.5vw,2rem);line-height:1.15">How do you want to study today?</h1></div>
+  show(`<div class="path-screen">
+    <div class="stack" style="gap:6px"><span class="eyebrow">Choose your path</span><h1 style="font-size:clamp(1.4rem,5.5vw,2rem);line-height:1.15">How do you want to study today?</h1></div>
     <div class="paths">
       <button class="path learn" id="goLearn" type="button">
         <span class="path-head"><span class="path-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3Z"/></svg></span><h2>Learner</h2></span>
