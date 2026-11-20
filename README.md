@@ -22,6 +22,11 @@ node tools/validate.js data/*.json
 node tools/build.js
 ```
 
-## Deploying to Cloudflare Pages
+## Deploying to Cloudflare Workers
 
-Use build command `node tools/build.js` and output directory `public`.
+The repo includes `wrangler.jsonc`, which serves `public/` as a static site on Workers.
+
+- Build command: `node tools/build.js`
+- Deploy command: `npx wrangler deploy`
+
+Connect the repo once in the Cloudflare dashboard and every push to `main` redeploys.

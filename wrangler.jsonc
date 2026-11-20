@@ -1,0 +1,8 @@
+{
+  // Static site served by Cloudflare Workers. Build first with `node tools/build.js`.
+  "name": "architect-prep",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./public"
+  }
+}
