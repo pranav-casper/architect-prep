@@ -3,6 +3,7 @@
   {
    "id": "c01",
    "domain": 1,
+   "ts": "1.1",
    "title": "The agentic loop",
    "explain": "An agent is like a cook who keeps asking the recipe what to do next. Each time Claude replies, the reply carries a stop_reason that says why it stopped. If the reason is tool_use, Claude wants you to run a tool and hand back the result. If the reason is end_turn, Claude has finished.",
    "rule": "Loop on stop_reason: keep going for tool_use and stop for end_turn.",
@@ -31,11 +32,38 @@
      "answer": 0,
      "why": "A tool_use stop means Claude is waiting for the tool result, so you run it and send the result back."
     }
+   ],
+   "applied": [
+    {
+     "id": "c01c",
+     "prompt": "Your loop exits as soon as a reply contains text. Claude often writes \"Let me check that order\" alongside a tool call, so the loop quits before the tool runs. What should you change?",
+     "options": [
+      "Strip all text from replies before checking whether to stop",
+      "Tell Claude in the prompt never to write text next to tools",
+      "Stop only on stop_reason end_turn, whatever the text says",
+      "Cap the loop at ten turns so it always runs a few times"
+     ],
+     "answer": 2,
+     "why": "A reply can hold text and a tool call together, so only stop_reason tells you whether Claude is finished."
+    },
+    {
+     "id": "c01d",
+     "prompt": "Your loop runs the tool Claude asked for, but the next request does not include the tool's result. Claude keeps asking for the same tool. What went wrong?",
+     "options": [
+      "The tool result was never added to the conversation history",
+      "The loop needs a higher iteration cap to finish the job",
+      "The tool description is too vague for Claude to trust it",
+      "The loop should ignore stop_reason after the first tool call"
+     ],
+     "answer": 0,
+     "why": "Claude can only use a tool result that is appended to the messages it receives next."
+    }
    ]
   },
   {
    "id": "c02",
    "domain": 1,
+   "ts": "1.4",
    "title": "Rules enforced by code",
    "explain": "A sign saying \"please wash your hands\" is a request, but a door that only opens after a soap sensor trips is a guarantee. Prompts are requests that Claude usually follows. Hooks and prerequisite gates are code that runs every time, so use them when a rule must never be broken.",
    "rule": "If a rule must always hold, enforce it in code with a hook or gate, not in the prompt.",
@@ -64,11 +92,38 @@
      "answer": 1,
      "why": "A hook can stop the call before it runs and hand the case to a person, which guarantees the policy."
     }
+   ],
+   "applied": [
+    {
+     "id": "c02c",
+     "prompt": "An account agent must call get_balance before close_account. The prompt already says so in capital letters, yet a few closures still skip the check. What should you do?",
+     "options": [
+      "Repeat the instruction at both the start and end of the prompt",
+      "Block close_account in code until get_balance has returned",
+      "Add more example chats where the balance is checked first",
+      "Ask the agent to list its completed steps before it closes"
+     ],
+     "answer": 1,
+     "why": "Prompt wording only makes the order likely, while a programmatic prerequisite blocks the call every time."
+    },
+    {
+     "id": "c02d",
+     "prompt": "A team's only refund limit is the system prompt line \"Never refund more than $500.\" A manager asks whether this guarantees the limit. What is the accurate answer?",
+     "options": [
+      "Yes, a clear system prompt rule is always followed",
+      "Yes, as long as the rule is written in bold capitals",
+      "No, the limit must be restated in every user message",
+      "No, prompts can still fail now and then, so use a hook"
+     ],
+     "answer": 3,
+     "why": "Prompt instructions have a non-zero failure rate, so a rule that must always hold belongs in code."
+    }
    ]
   },
   {
    "id": "c03",
    "domain": 1,
+   "ts": "1.3",
    "title": "Subagents need context",
    "explain": "A subagent is like a contractor you hire for one job. The contractor starts with a blank slate and cannot read your earlier chats. A coordinator agent must put everything the helper needs into the task it hands over, and it should keep each helper focused on one job.",
    "rule": "Subagents do not inherit your history, so pass what they need in the task itself.",
@@ -97,11 +152,38 @@
      "answer": 3,
      "why": "Each helper works only from what the coordinator hands it, so the task must carry the needed inputs."
     }
+   ],
+   "applied": [
+    {
+     "id": "c03c",
+     "prompt": "A coordinator collects web search results and document analysis, then asks a synthesis subagent to \"write the report using what we found\". The report is generic and cites nothing. What should change?",
+     "options": [
+      "Put the full findings and their sources in the subagent's prompt",
+      "Give the synthesis subagent its own search tools to look again",
+      "Tell the synthesis subagent to try harder to be specific",
+      "Raise the synthesis subagent's output token limit a lot"
+     ],
+     "answer": 0,
+     "why": "The subagent cannot see what the coordinator found unless the findings are passed in its prompt."
+    },
+    {
+     "id": "c03d",
+     "prompt": "A coordinator passes its findings to a subagent as one long paragraph. The subagent's output no longer says which source each claim came from. What would fix this?",
+     "options": [
+      "Ask the subagent to infer the most likely source of each claim",
+      "Shorten the paragraph so the subagent can read it more easily",
+      "Pass findings as structured data with source and page fields",
+      "Let the subagent look up the sources in the coordinator's history"
+     ],
+     "answer": 2,
+     "why": "Structured data keeps content and source metadata apart, and the subagent cannot read the coordinator's history anyway."
+    }
    ]
   },
   {
    "id": "c04",
    "domain": 1,
+   "ts": "1.7",
    "title": "Resume or fork a session",
    "explain": "Think of a saved game. Resuming loads your save and carries on from the same point. Forking copies the save so you can try a risky path without losing the original. Use resume to continue the same work and fork to explore a different approach side by side.",
    "rule": "Resume to continue the same thread and fork to branch off and compare options.",
@@ -130,11 +212,38 @@
      "answer": 0,
      "why": "Forking gives each plan its own branch that starts from the shared analysis."
     }
+   ],
+   "applied": [
+    {
+     "id": "c04c",
+     "prompt": "You resume yesterday's named session about the payments module. Overnight a teammate rewrote two of the files it had analyzed. What should you do first?",
+     "options": [
+      "Carry on as normal since the session already knows the files",
+      "Fork the session so the old analysis stays safe from changes",
+      "Have the session re-explore the entire codebase from scratch",
+      "Tell the session which files changed so it re-reads them"
+     ],
+     "answer": 3,
+     "why": "Naming the changed files lets the resumed session re-analyze just those instead of trusting stale results or starting over."
+    },
+    {
+     "id": "c04d",
+     "prompt": "After a large refactor, most of the tool results in an old session no longer match the code. What is the most reliable way to continue the work?",
+     "options": [
+      "Resume the old session and trust its earlier results",
+      "Start a new session and give it a structured summary",
+      "Fork the old session so the stale results split in two",
+      "Resume the old session and ask it to forget old files"
+     ],
+     "answer": 1,
+     "why": "When prior tool results are stale, a fresh session with an injected summary is more reliable than resuming."
+    }
    ]
   },
   {
    "id": "c05",
    "domain": 2,
+   "ts": "2.1",
    "title": "Tool descriptions drive choice",
    "explain": "Claude picks a tool the way you pick a drawer, by reading the label. If two labels sound alike, it will grab the wrong one. When Claude keeps choosing the wrong tool, the label is the first thing to fix, with clear wording about what the tool does and when to use it.",
    "rule": "When Claude picks the wrong tool, fix the tool descriptions first.",
@@ -163,11 +272,38 @@
      "answer": 1,
      "why": "Saying what each tool covers and when to avoid it gives Claude the facts it needs to choose."
     }
+   ],
+   "applied": [
+    {
+     "id": "c05c",
+     "prompt": "An agent has search_web and search_docs, and both descriptions say \"Searches for information\". Internal policy questions keep going to search_web. What is the best first fix?",
+     "options": [
+      "Add a classifier that picks the tool before Claude runs",
+      "Add a system prompt line saying \"always search thoroughly\"",
+      "Say what each tool searches, its inputs and when to use it",
+      "Remove search_web so every question goes to search_docs"
+     ],
+     "answer": 2,
+     "why": "Tool descriptions are the main thing Claude uses to choose, so clear, distinct descriptions fix the root cause."
+    },
+    {
+     "id": "c05d",
+     "prompt": "Tool descriptions are clear, but the system prompt says \"For any customer question, always check the order first.\" Claude now calls lookup_order even for account questions. What should you fix?",
+     "options": [
+      "The system prompt line that ties questions to one tool",
+      "The tool names, which should all be made a lot shorter",
+      "The model temperature, which is probably set too high",
+      "The examples, which should be raised to twenty or more"
+     ],
+     "answer": 0,
+     "why": "Keyword-heavy system prompt instructions can override good tool descriptions and create unwanted tool associations."
+    }
    ]
   },
   {
    "id": "c06",
    "domain": 2,
+   "ts": "2.2",
    "title": "Tell the agent what failed",
    "explain": "When a tool breaks, a vague \"something went wrong\" leaves the agent stuck. A good error says what kind of failure it was and whether trying again could help. Mark it with the isError flag so Claude knows it was a failure. Also, a search that finds nothing is a valid answer and is not an error.",
    "rule": "Return structured errors with the failure type and retry advice, and keep empty results separate.",
@@ -196,11 +332,38 @@
      "answer": 2,
      "why": "No matches is a valid outcome, so it should look different from a failure."
     }
+   ],
+   "applied": [
+    {
+     "id": "c06c",
+     "prompt": "A refund tool rejects a request because it breaks policy, but returns the same \"Operation failed\" it uses for timeouts. The agent keeps retrying. What should the tool return?",
+     "options": [
+      "An isError result saying \"Operation failed, try again later\"",
+      "An isError result with a business category and isRetryable false",
+      "A normal empty result so the agent stops asking for a refund",
+      "No result at all, so the agent's loop times out on its own"
+     ],
+     "answer": 1,
+     "why": "Marking a policy failure as a non-retryable business error tells the agent to stop retrying and explain it instead."
+    },
+    {
+     "id": "c06d",
+     "prompt": "A tool receives a date from the agent in a format it cannot parse. Which error category and retry advice fit best?",
+     "options": [
+      "Transient error: retry the same call right away",
+      "Permission error: stop and request admin access",
+      "No error: return an empty result with no matches",
+      "Validation error: retry only with fixed input"
+     ],
+     "answer": 3,
+     "why": "Bad input is a validation error, so the same call will keep failing until the input is corrected."
+    }
    ]
   },
   {
    "id": "c07",
    "domain": 2,
+   "ts": "2.3",
    "title": "Few tools and tool_choice",
    "explain": "A worker with a small, well-labeled toolbox picks the right tool more often than one buried under dozens. Give each agent only the tools its job needs, usually around four or five. When you need a specific tool called, tool_choice can force it instead of hoping.",
    "rule": "Give each agent a small set of relevant tools and use tool_choice to force a required call.",
@@ -229,13 +392,40 @@
      "answer": 3,
      "why": "Forcing the tool with tool_choice guarantees the call, while a prompt line only suggests it."
     }
+   ],
+   "applied": [
+    {
+     "id": "c07c",
+     "prompt": "A billing subagent was also given the shipping team's tools, and it sometimes changes shipping addresses on its own. What is the best fix?",
+     "options": [
+      "Add a prompt line asking it to leave shipping work alone",
+      "Give it even more tools so it has a wider set to pick from",
+      "Switch to a larger model that is better at choosing tools",
+      "Limit the billing subagent to the tools its role needs"
+     ],
+     "answer": 3,
+     "why": "Agents misuse tools outside their specialty, so scoping tools to the role prevents it."
+    },
+    {
+     "id": "c07d",
+     "prompt": "An extraction app sometimes gets a chatty text reply instead of a tool call. It has three extraction tools, one per document type, and the type is not known in advance. Which setting fixes this?",
+     "options": [
+      "tool_choice \"auto\", so Claude decides for itself each time",
+      "tool_choice \"any\", so Claude must call one of the tools",
+      "Forced tool_choice naming the first of the three tools",
+      "No tools at all, with a request for JSON in the prompt"
+     ],
+     "answer": 1,
+     "why": "With \"any\" Claude must call a tool but can still pick the one that fits, while \"auto\" allows plain text."
+    }
    ]
   },
   {
    "id": "c08",
    "domain": 3,
+   "ts": "3.1",
    "title": "CLAUDE.md levels",
-   "explain": "CLAUDE.md files are notes Claude reads at the start of a session. There are layers, much like house rules, street rules and city rules. A user-level file applies only to you, a project file in the repo is shared with the whole team, and a folder file applies only inside that folder.",
+   "explain": "CLAUDE.md files are notes Claude reads at the start of a session. There are layers, much like house rules, street rules and city rules. A user-level file applies only to you, a project file in the repo is shared with the whole team, and a folder file applies only inside that folder. If Claude follows a rule for one person but not another, run /memory to see which files each session actually loaded.",
    "rule": "Put team rules in the project CLAUDE.md in the repo, since user-level files are not shared.",
    "questions": [
     {
@@ -262,11 +452,38 @@
      "answer": 0,
      "why": "User-level files stay on your machine, so teammates never see those rules."
     }
+   ],
+   "applied": [
+    {
+     "id": "c08c",
+     "prompt": "Claude follows the team's rules for one developer but not for another on the same repo. What should each developer run first to diagnose this?",
+     "options": [
+      "Run /memory to see the loaded memory files",
+      "Run /compact to shrink each developer's context",
+      "Run --resume to reload each developer's last session",
+      "Run -p to print every configuration file in the repo"
+     ],
+     "answer": 0,
+     "why": "The /memory command shows which memory files are loaded, which is how you diagnose inconsistent behavior."
+    },
+    {
+     "id": "c08d",
+     "prompt": "A monorepo's root CLAUDE.md pastes in both the API and the frontend standards in full, so every package gets both. What is a cleaner setup?",
+     "options": [
+      "Move both standards into each developer's user-level CLAUDE.md",
+      "Paste both standards again at the end of the root CLAUDE.md",
+      "Have each package's CLAUDE.md @import only its own standards",
+      "Delete both standards and explain them in chat when needed"
+     ],
+     "answer": 2,
+     "why": "@import lets each package include only the standards files relevant to it, keeping CLAUDE.md modular."
+    }
    ]
   },
   {
    "id": "c09",
    "domain": 3,
+   "ts": "3.3",
    "title": "Rules for certain files",
    "explain": "Some rules only matter for certain files, like test rules for test files. A rules file in the .claude/rules folder can carry a path pattern, called a glob, such as **/*.test.ts. Claude loads that rule only when it touches matching files, which keeps everything else uncluttered.",
    "rule": "Use .claude/rules files with path globs for rules that apply to specific file types.",
@@ -295,11 +512,38 @@
      "answer": 2,
      "why": "Scoped rule files load only when relevant, so the root file stays short."
     }
+   ],
+   "applied": [
+    {
+     "id": "c09c",
+     "prompt": "Terraform conventions sit in the root CLAUDE.md, so they load even while Claude edits React files. What keeps them out of unrelated work?",
+     "options": [
+      "A line saying to skip this part unless editing Terraform",
+      "A .claude/rules/ file with paths: [\"terraform/**/*\"]",
+      "Moving them into each developer's ~/.claude/CLAUDE.md",
+      "Splitting them into more sections in the root CLAUDE.md"
+     ],
+     "answer": 1,
+     "why": "A path-scoped rule loads only when Claude edits matching files, so it adds no context elsewhere."
+    },
+    {
+     "id": "c09d",
+     "prompt": "Handler conventions live in CLAUDE.md files copied into eight folders. Files named *.handler.ts in newer folders keep missing the conventions. What is the best fix?",
+     "options": [
+      "Copy the CLAUDE.md into each new handler folder too",
+      "Move the conventions into each developer's home folder",
+      "Paste the conventions into the root CLAUDE.md as well",
+      "One rule file with paths matching **/*.handler.ts"
+     ],
+     "answer": 3,
+     "why": "A glob-scoped rule covers matching files in every folder, new or old, and loads only when those files are edited."
+    }
    ]
   },
   {
    "id": "c10",
    "domain": 3,
+   "ts": "3.6",
    "title": "Claude Code in CI",
    "explain": "A CI job runs with nobody at the keyboard, so Claude Code must not stop and ask questions. The -p flag runs it in non-interactive mode, where it takes one prompt, prints an answer and exits. Asking for JSON output makes the result easy for other tools to read.",
    "rule": "In CI, run Claude Code with -p and request structured output so scripts can parse it.",
@@ -328,11 +572,38 @@
      "answer": 3,
      "why": "Structured JSON gives scripts predictable fields, so no guessing is needed."
     }
+   ],
+   "applied": [
+    {
+     "id": "c10c",
+     "prompt": "A CI job runs claude -p and posts findings as inline PR comments, but the script often fails to parse Claude's reply. What should you add?",
+     "options": [
+      "A prompt line asking Claude to please answer in valid JSON",
+      "A retry that reruns the job until parsing happens to work",
+      "--output-format json with --json-schema for fixed fields",
+      "A regular expression that pulls findings out of the prose"
+     ],
+     "answer": 2,
+     "why": "These CLI flags enforce machine-parseable structured output, while prompts and regexes only make it likely."
+    },
+    {
+     "id": "c10d",
+     "prompt": "After each new commit, the CI review posts the same comments again, including issues the author already fixed. What should the next run include?",
+     "options": [
+      "The prior findings, and a request to report only new or open issues",
+      "A longer timeout so the review can read the full commit history",
+      "The same prompt as before, with a lower temperature each time",
+      "A note asking Claude to keep every comment as short as possible"
+     ],
+     "answer": 0,
+     "why": "Giving the review its earlier findings lets it skip duplicates and report only new or unaddressed issues."
+    }
    ]
   },
   {
    "id": "c11",
    "domain": 4,
+   "ts": "4.1",
    "title": "Explicit criteria beat vague words",
    "explain": "Telling Claude to \"be careful\" or \"only flag important issues\" is like telling a referee to \"call fouls fairly\". Nobody knows where the line is. List the exact things to flag and the things to skip, ideally with a short example, and the results become steady.",
    "rule": "Replace vague words like careful or important with specific, testable criteria.",
@@ -361,11 +632,38 @@
      "answer": 3,
      "why": "A concrete limit gives Claude a target it can meet every time."
     }
+   ],
+   "applied": [
+    {
+     "id": "c11c",
+     "prompt": "A team added \"be conservative and only report high-confidence findings\" to a security review prompt, but false positives barely dropped. What should they do instead?",
+     "options": [
+      "Only show findings rated above 90% confidence",
+      "Repeat \"be conservative\" at the start and end",
+      "Have Claude explain its confidence on each one",
+      "Define which issue types to report and skip"
+     ],
+     "answer": 3,
+     "why": "General caution words and confidence filters do not improve precision the way specific categorical criteria do."
+    },
+    {
+     "id": "c11d",
+     "prompt": "A code reviewer's style category produces mostly false positives, and developers have started ignoring its security findings too. What is a sensible first step?",
+     "options": [
+      "Keep every category and add \"be careful\" to the style part",
+      "Turn off the style category while its criteria are improved",
+      "Ask developers to read each finding more closely than before",
+      "Add confidence scores and hide every finding below a cutoff"
+     ],
+     "answer": 1,
+     "why": "Pausing a high false-positive category restores trust in the accurate ones while you fix its prompt."
+    }
    ]
   },
   {
    "id": "c12",
    "domain": 4,
+   "ts": "4.3",
    "title": "Schemas for structured output",
    "explain": "If you need data in a fixed shape, give Claude a tool with a JSON schema and have it fill in the fields. This guarantees the shape is valid, much like a form with labeled boxes. A schema cannot guarantee the values are true, though, so make a field nullable when the data may be missing instead of forcing a guess.",
    "rule": "Use tool_use with a JSON schema for shape, and allow null so Claude never has to invent values.",
@@ -394,11 +692,38 @@
      "answer": 3,
      "why": "A nullable field gives Claude a safe way to say the value is absent."
     }
+   ],
+   "applied": [
+    {
+     "id": "c12c",
+     "prompt": "An extraction tool with a strict JSON schema always returns valid JSON, yet on some invoices the line items do not add up to the total. Why did the schema not catch this?",
+     "options": [
+      "Schemas fix shape, not whether the values are correct",
+      "The schema must be missing a required field for the total",
+      "tool_choice was set to auto instead of forcing the tool",
+      "JSON schemas only check the first few fields of an object"
+     ],
+     "answer": 0,
+     "why": "Tool use with a schema removes syntax errors, but semantic errors like wrong sums still need separate checks."
+    },
+    {
+     "id": "c12d",
+     "prompt": "A ticket schema has a category enum of billing, shipping and returns. New kinds of tickets keep getting forced into the wrong category. What schema change helps?",
+     "options": [
+      "Make the category field required so it is never empty",
+      "Drop the enum and let Claude write any category it likes",
+      "Add \"other\" with a detail field, plus \"unclear\"",
+      "Add more examples of billing and shipping tickets"
+     ],
+     "answer": 2,
+     "why": "An \"other\" value with a detail string handles new categories, and \"unclear\" covers ambiguous cases without forcing a guess."
+    }
    ]
   },
   {
    "id": "c13",
    "domain": 4,
+   "ts": "4.5",
    "title": "Batch or real time",
    "explain": "The Message Batches API is like sending a parcel by slow freight. It costs less, but results can take up to 24 hours and there is no promise of speed. That suits overnight jobs where no one is waiting, and it is a poor fit for anything that blocks a person or a merge.",
    "rule": "Use batches for slow, non-urgent work and normal calls for anything someone is waiting on.",
@@ -427,11 +752,38 @@
      "answer": 3,
      "why": "A merge gate needs a fast answer, and batches give no time guarantee."
     }
+   ],
+   "applied": [
+    {
+     "id": "c13c",
+     "prompt": "An overnight batch of 5,000 documents comes back with 40 failures, mostly documents that were too long for the context window. What should you do?",
+     "options": [
+      "Resubmit all 5,000 documents in a fresh batch the next night",
+      "Move the whole job to the real-time API to avoid failures",
+      "Resubmit only the 40, found by custom_id, after chunking them",
+      "Drop the 40 failures and report on the other 4,960 only"
+     ],
+     "answer": 2,
+     "why": "custom_id identifies the failed requests, so you fix and resend only those."
+    },
+    {
+     "id": "c13d",
+     "prompt": "A team wants to run an agent through the Batches API, but the agent must call a lookup tool mid-task and use the result. What is the problem?",
+     "options": [
+      "A batch request cannot run tools mid-request and carry on",
+      "Batches cost more than normal calls whenever tools are used",
+      "Batch results come back with no way to match them to requests",
+      "Batch requests fail if they take longer than one hour"
+     ],
+     "answer": 0,
+     "why": "The batch API cannot run tools mid-request, while it does cut cost by 50%, match results by custom_id and allow up to 24 hours."
+    }
    ]
   },
   {
    "id": "c14",
    "domain": 5,
+   "ts": "5.1",
    "title": "Keep key facts safe",
    "explain": "When a long chat is summarized, small details like an order number or a promised refund amount can get squeezed out. Keep a short block of case facts, such as ids, amounts and dates, and include it word for word in every request. The summary can shrink, but the facts stay intact.",
    "rule": "Keep exact key facts in a case-facts block instead of trusting a summary to keep them.",
@@ -460,11 +812,38 @@
      "answer": 2,
      "why": "A small fixed block of facts is carried through every request, so compaction cannot drop it."
     }
+   ],
+   "applied": [
+    {
+     "id": "c14c",
+     "prompt": "In one chat a customer raises a late order, a double charge of $42.10 and a wrong size. After summarizing, the agent mixes up which order had which problem. What would help most?",
+     "options": [
+      "Summarize the chat more often so each summary covers less",
+      "Keep each issue's order ID, amount and status in a facts layer",
+      "Ask the customer to restate all three issues at each step",
+      "Handle only the latest issue and close the other two first"
+     ],
+     "answer": 1,
+     "why": "Structured issue data kept outside the summary preserves the exact facts for each issue."
+    },
+    {
+     "id": "c14d",
+     "prompt": "A summary of a long chat says the customer \"expects a partial refund soon\", but the customer had actually said \"$80 by Friday\". What went wrong?",
+     "options": [
+      "The model can only hold a few numbers",
+      "The customer stated the amount vaguely",
+      "The summary was too long to be useful",
+      "Summarizing blurred exact values"
+     ],
+     "answer": 3,
+     "why": "Progressive summarization tends to turn amounts and dates into vague words, so exact facts belong in a case-facts block."
+    }
    ]
   },
   {
    "id": "c15",
    "domain": 5,
+   "ts": "5.2",
    "title": "When to hand off to a human",
    "explain": "Escalating to a person should depend on clear, checkable triggers. These include a customer asking for a human, a case outside policy, or no progress after real attempts. An upset tone alone is a poor trigger because plenty of calm cases need help and plenty of upset ones are easy to solve.",
    "rule": "Escalate on explicit requests and policy limits, never on mood alone.",
@@ -493,11 +872,38 @@
      "answer": 0,
      "why": "Mood is an unreliable trigger, so use clear rules such as policy limits or explicit requests."
     }
+   ],
+   "applied": [
+    {
+     "id": "c15c",
+     "prompt": "A customer is annoyed that a delivery is late, but the fix is a standard reship the agent can do. They have not asked for a human. What should the agent do?",
+     "options": [
+      "Acknowledge the frustration and offer the reship now",
+      "Escalate to a human since the customer is clearly upset",
+      "Wait for a sentiment score to pass a set level first",
+      "Send only the tracking link and skip the frustration"
+     ],
+     "answer": 0,
+     "why": "When the issue is within the agent's ability, it should acknowledge the feeling and resolve it, escalating only if the customer asks."
+    },
+    {
+     "id": "c15d",
+     "prompt": "A customer asks the agent to match a competitor's lower price. The policy only covers price changes on your own site. What should the agent do?",
+     "options": [
+      "Refuse, since the policy does not allow price matches",
+      "Approve it, since the policy allows price adjustments",
+      "Escalate, since the policy is silent on this request",
+      "Wait to escalate until the customer sounds frustrated"
+     ],
+     "answer": 2,
+     "why": "A gap in policy is an escalation trigger, so a human should decide instead of the agent guessing."
+    }
    ]
   },
   {
    "id": "c16",
    "domain": 5,
+   "ts": "5.3",
    "title": "Pass errors up clearly",
    "explain": "In a team of agents, a helper that fails quietly leaves the coordinator guessing. A helper should report what it tried, what went wrong and what it still managed to get. With that, the coordinator can retry, use another source or tell the user honestly what is missing, and each claim keeps its source.",
    "rule": "Report failures with details and partial results, never as silence or a bare crash.",
@@ -525,6 +931,872 @@
      ],
      "answer": 1,
      "why": "Partial results plus clear failure details let the coordinator decide what to do next."
+    }
+   ],
+   "applied": [
+    {
+     "id": "c16c",
+     "prompt": "A subagent's database query times out once. It reports this straight to the coordinator, which then stops the whole workflow. What is a better design?",
+     "options": [
+      "End the workflow whenever any subagent hits an error",
+      "Return an empty result so the workflow keeps moving",
+      "Retry without limit and never report it to anyone",
+      "Retry locally and report up only if it still fails"
+     ],
+     "answer": 3,
+     "why": "Subagents should handle transient failures locally and pass up only what they cannot resolve, with what they tried."
+    },
+    {
+     "id": "c16d",
+     "prompt": "Two of six sources were down during a research run, but the final report reads as if coverage were complete. What should the synthesis output include?",
+     "options": [
+      "Only the findings from four sources, shown as the full picture",
+      "Notes on which findings are well supported and where gaps are",
+      "A best guess at what the two missing sources would have said",
+      "An error message in place of the report, since sources failed"
+     ],
+     "answer": 1,
+     "why": "Coverage annotations tell readers which areas are solid and which have gaps from unavailable sources."
+    }
+   ]
+  },
+  {
+   "id": "c17",
+   "domain": 1,
+   "ts": "1.2",
+   "title": "The coordinator runs the show",
+   "explain": "A coordinator agent is like a project lead who hands out work, collects results and decides what happens next. Subagents report only to the coordinator, not to each other, so every message passes through one place where errors and routing are handled. A good coordinator picks only the helpers a request needs and checks the combined result for gaps.",
+   "rule": "Route all subagent work through the coordinator, and let it choose helpers and fill gaps.",
+   "questions": [
+    {
+     "id": "c17a",
+     "prompt": "In a hub-and-spoke multi-agent system, how do two subagents share information?",
+     "options": [
+      "By sending messages straight to each other as they work",
+      "By reading each other's full conversation history",
+      "Through the coordinator, which routes what each needs",
+      "By sharing one long context window among all of them"
+     ],
+     "answer": 2,
+     "why": "The coordinator handles all communication between subagents, which keeps routing and error handling in one place."
+    },
+    {
+     "id": "c17b",
+     "prompt": "A simple question needs only one quick search, but the system always runs search, analysis and writing helpers. What should the coordinator do instead?",
+     "options": [
+      "Pick only the helpers this request actually needs",
+      "Run every helper anyway so nothing is ever missed",
+      "Let the helpers vote on which of them runs first",
+      "Send it to all helpers and keep the fastest answer"
+     ],
+     "answer": 0,
+     "why": "A coordinator should look at what the request needs and invoke only those subagents."
+    }
+   ],
+   "applied": [
+    {
+     "id": "c17c",
+     "prompt": "The coordinator reviews a draft report and sees no data on costs, one of the areas the user asked about. What should it do next?",
+     "options": [
+      "Send the draft and tell the user costs were out of scope",
+      "Ask the synthesis helper to fill the gap from memory",
+      "Restart the whole pipeline from scratch with the same plan",
+      "Send a targeted cost query to search, then rerun synthesis"
+     ],
+     "answer": 3,
+     "why": "The coordinator closes gaps by re-delegating targeted work and re-invoking synthesis until coverage is sufficient."
+    },
+    {
+     "id": "c17d",
+     "prompt": "Two search subagents keep returning the same articles while parts of the topic get no coverage. What is the best fix?",
+     "options": [
+      "Let the two subagents read each other's results directly",
+      "Give each subagent a distinct subtopic or source type",
+      "Add a third search subagent with exactly the same task",
+      "Ask both subagents to search harder and return more"
+     ],
+     "answer": 1,
+     "why": "Partitioning the scope across subagents cuts duplication and spreads coverage, and it keeps communication routed through the coordinator."
+    }
+   ]
+  },
+  {
+   "id": "c18",
+   "domain": 1,
+   "ts": "1.5",
+   "title": "Hooks that tidy tool results",
+   "explain": "A hook is a small piece of code that runs at a fixed point in the agent loop, every single time. A PostToolUse hook runs right after a tool returns, so it can tidy the result before Claude reads it, like a translator who turns every date into one format. Another kind of hook checks an outgoing tool call and can block it or send it elsewhere.",
+   "rule": "Use a PostToolUse hook to normalize tool results so Claude always sees one consistent format.",
+   "questions": [
+    {
+     "id": "c18a",
+     "prompt": "Three MCP tools return dates as Unix timestamps, ISO 8601 strings and plain text. Where is the best place to make them consistent?",
+     "options": [
+      "A line in the system prompt asking Claude to convert each date",
+      "A PostToolUse hook converting dates before Claude reads them",
+      "A few examples showing Claude how to read each date style",
+      "A note in each tool description that lists its date format"
+     ],
+     "answer": 1,
+     "why": "A hook converts every result in code, every time, while prompts and examples only make conversion likely."
+    },
+    {
+     "id": "c18b",
+     "prompt": "When does a PostToolUse hook run?",
+     "options": [
+      "Before Claude decides which tool it wants to call",
+      "Only when a tool returns an error instead of data",
+      "Once at the very end, after the agent has finished",
+      "After a tool returns, before Claude reads it"
+     ],
+     "answer": 3,
+     "why": "PostToolUse runs on the tool result before the model processes it, which is why it suits normalization."
+    }
+   ],
+   "applied": [
+    {
+     "id": "c18c",
+     "prompt": "An order tool returns numeric status codes like 3 and 7, and the agent sometimes tells customers the wrong status. What is the most reliable fix?",
+     "options": [
+      "Map each code to a plain name in a PostToolUse hook",
+      "Add a table of all status codes to the system prompt",
+      "Ask Claude to double check each code before replying",
+      "Switch to a larger model that may know the codes"
+     ],
+     "answer": 0,
+     "why": "Translating codes in a hook means Claude only ever sees the correct plain status, with no reliance on recall."
+    },
+    {
+     "id": "c18d",
+     "prompt": "A support agent needs two guarantees: dates from every tool arrive in one format, and refunds over $500 never go out without a human. Which setup fits?",
+     "options": [
+      "Run one hook after the refund tool finishes to check both rules",
+      "Write both rules into the system prompt with clear examples",
+      "Normalize results after tools return; check refund calls before they run",
+      "Normalize dates before each call and review refunds afterward"
+     ],
+     "answer": 2,
+     "why": "Result normalization belongs after the tool returns, and a policy block must intercept the call before it runs."
+    }
+   ]
+  },
+  {
+   "id": "c19",
+   "domain": 1,
+   "ts": "1.6",
+   "title": "Fixed steps or an adaptive plan",
+   "explain": "Some jobs are like an assembly line, with the same steps in the same order every time. Others are like detective work, where each clue decides the next step. Use a fixed chain of prompts for predictable work, and use a plan that adapts to what is found for open-ended work.",
+   "rule": "Chain fixed steps for predictable tasks and let the plan adapt for open-ended investigations.",
+   "questions": [
+    {
+     "id": "c19a",
+     "prompt": "Which task suits a fixed sequence of prompt steps best?",
+     "options": [
+      "Finding why a rare bug hits only some customers",
+      "Exploring an unknown codebase to see what might break",
+      "Researching a question where each clue changes the plan",
+      "Extracting then formatting fields on every invoice"
+     ],
+     "answer": 3,
+     "why": "A predictable sequence of steps that repeats for every input is a natural fit for prompt chaining."
+    },
+    {
+     "id": "c19b",
+     "prompt": "What makes dynamic decomposition a good fit for a task?",
+     "options": [
+      "The steps are always the same for every input",
+      "The task is small enough to finish in one prompt",
+      "Next steps depend on what earlier steps find",
+      "The output must follow one strict, fixed format"
+     ],
+     "answer": 2,
+     "why": "Adaptive plans shine when discoveries along the way decide what to do next."
+    }
+   ],
+   "applied": [
+    {
+     "id": "c19c",
+     "prompt": "You ask Claude to \"add thorough tests to a legacy codebase\" and it starts writing tests for the first file it opens. What approach works better?",
+     "options": [
+      "Write tests file by file in alphabetical order until done",
+      "Map the structure, find high-impact areas, then plan and adapt",
+      "Ask for exactly one test per function across the codebase",
+      "Generate all of the tests in a single prompt to save time"
+     ],
+     "answer": 1,
+     "why": "Open-ended work goes better when Claude maps the code first and builds a prioritized plan that adapts as dependencies appear."
+    },
+    {
+     "id": "c19d",
+     "prompt": "A team's document review always needs the same three checks: legal terms, pricing and dates. One large prompt keeps skipping a check. What should they do?",
+     "options": [
+      "Chain three prompts, each running one check in order",
+      "Let the agent decide afresh which checks to run each time",
+      "Add more words to the single prompt about every check",
+      "Run the large prompt twice and merge the two outputs"
+     ],
+     "answer": 0,
+     "why": "Breaking a predictable review into sequential steps gives each check focused attention."
+    }
+   ]
+  },
+  {
+   "id": "c20",
+   "domain": 2,
+   "ts": "2.4",
+   "title": "Where MCP servers live",
+   "explain": "MCP servers give Claude extra tools, and where you configure them decides who gets them. A project .mcp.json lives in the repo, so the whole team shares it, while ~/.claude.json is just for you. Keep secrets out of the repo by writing ${GITHUB_TOKEN} in .mcp.json, so each person's own token is filled in from their environment.",
+   "rule": "Share team MCP servers in .mcp.json with ${VAR} for secrets, and keep personal ones in ~/.claude.json.",
+   "questions": [
+    {
+     "id": "c20a",
+     "prompt": "The whole team needs the same Jira MCP server. Where should it be configured?",
+     "options": [
+      "In the project .mcp.json in the repo",
+      "In each person's ~/.claude.json file",
+      "In a pinned message in the team chat",
+      "In the root CLAUDE.md as a plain note"
+     ],
+     "answer": 0,
+     "why": "A project-scoped .mcp.json is committed to the repo, so everyone gets the same server."
+    },
+    {
+     "id": "c20b",
+     "prompt": "Your committed .mcp.json needs a GitHub token. How should the token appear in the file?",
+     "options": [
+      "As the real token pasted in as plain text",
+      "As ${GITHUB_TOKEN} from the environment",
+      "As a comment asking people to add their own",
+      "Left out, with the token typed in each session"
+     ],
+     "answer": 1,
+     "why": "Environment variable expansion keeps the secret out of version control while the shared config still works."
+    }
+   ],
+   "applied": [
+    {
+     "id": "c20c",
+     "prompt": "Your team added an MCP code search tool that understands symbols and history, but Claude keeps using built-in Grep instead. What should you change first?",
+     "options": [
+      "Remove Grep from the agent so it has no other option",
+      "Add a system prompt line saying never to use Grep",
+      "Expand the MCP tool description to explain what it returns",
+      "Install a second MCP search server next to the first"
+     ],
+     "answer": 2,
+     "why": "A detailed description of the MCP tool's capabilities and outputs helps Claude prefer it over a simpler built-in tool."
+    },
+    {
+     "id": "c20d",
+     "prompt": "At the start of every task, an agent makes a dozen exploratory tool calls just to learn which database tables exist. What would cut this down?",
+     "options": [
+      "Give the agent a larger budget of tool calls",
+      "Ask the agent to guess table names from habit",
+      "Add a tool that lists one table on each call",
+      "Expose the schema catalog as an MCP resource"
+     ],
+     "answer": 3,
+     "why": "An MCP resource shows the agent what data exists up front, so it does not need exploratory calls."
+    }
+   ]
+  },
+  {
+   "id": "c21",
+   "domain": 2,
+   "ts": "2.5",
+   "title": "Pick the right built-in tool",
+   "explain": "Claude Code's built-in tools each have one job. Grep searches inside files for text, such as a function name or an error message, and Glob finds files by name pattern, such as **/*.test.tsx. Read and Write handle whole files, while Edit changes one spot by matching unique text. If Edit cannot find a unique match, read the file and write it back in full.",
+   "rule": "Grep for content, Glob for file names, Edit for targeted changes, and Read plus Write when Edit cannot match.",
+   "questions": [
+    {
+     "id": "c21a",
+     "prompt": "You want to find every file that calls the function parseInvoice. Which tool fits?",
+     "options": [
+      "Glob, matching files named parseInvoice",
+      "Read, opening every single file in the project",
+      "Grep, searching file contents for the name",
+      "Edit, renaming it to see what breaks"
+     ],
+     "answer": 2,
+     "why": "Grep searches inside files, which is how you find every caller of a function."
+    },
+    {
+     "id": "c21b",
+     "prompt": "You need a list of every file named like *.test.tsx anywhere in the repo. Which tool fits?",
+     "options": [
+      "Glob with the pattern **/*.test.tsx",
+      "Grep for the word test inside every file",
+      "Read each folder and scan the file names",
+      "Bash to open each file one at a time"
+     ],
+     "answer": 0,
+     "why": "Glob matches file paths by pattern, so it lists files by name without opening them."
+    }
+   ],
+   "applied": [
+    {
+     "id": "c21c",
+     "prompt": "Edit fails because the line you want to change appears several times in config.ts. What is the reliable fallback?",
+     "options": [
+      "Retry Edit with the same text until it works",
+      "Use Grep to change the matching line in place",
+      "Delete the file and recreate it from memory",
+      "Read the file, then Write it back"
+     ],
+     "answer": 3,
+     "why": "When Edit has no unique anchor, Read plus Write replaces the file reliably."
+    },
+    {
+     "id": "c21d",
+     "prompt": "You join a large codebase and need to understand how checkout works. What is the best way to start?",
+     "options": [
+      "Read every file in the repo before asking anything",
+      "Grep for the checkout entry point, then Read along imports",
+      "Glob for all files and open them in name order",
+      "Ask Claude to infer the flow from common patterns"
+     ],
+     "answer": 1,
+     "why": "Building understanding step by step from an entry point avoids loading the whole codebase up front."
+    }
+   ]
+  },
+  {
+   "id": "c22",
+   "domain": 3,
+   "ts": "3.2",
+   "title": "Commands and skills",
+   "explain": "A custom slash command is a saved prompt you run by name. Commands in the repo's .claude/commands/ folder reach the whole team, while ~/.claude/commands/ is just for you. Skills live in .claude/skills/ with a SKILL.md file whose frontmatter sets options: context: fork runs the skill in its own sub-agent so its long output stays out of your chat, and allowed-tools limits what it can use.",
+   "rule": "Share commands and skills through the repo, and use frontmatter such as context: fork and allowed-tools to control how a skill runs.",
+   "questions": [
+    {
+     "id": "c22a",
+     "prompt": "A skill produces pages of codebase analysis that clutter your main chat. Which frontmatter option helps?",
+     "options": [
+      "argument-hint, to ask which folder to scan",
+      "context: fork, to run it in its own sub-agent",
+      "allowed-tools, to give it extra search tools",
+      "A longer skill description so it runs less often"
+     ],
+     "answer": 1,
+     "why": "context: fork runs the skill in an isolated sub-agent, so its verbose output stays out of the main conversation."
+    },
+    {
+     "id": "c22b",
+     "prompt": "You want a personal version of the team's /deploy-check skill without changing it for teammates. What should you do?",
+     "options": [
+      "Edit the shared skill in .claude/skills/ directly",
+      "Add your own changes to the project CLAUDE.md",
+      "Ask each teammate to switch off the shared skill for now",
+      "Make a differently named copy in ~/.claude/skills/"
+     ],
+     "answer": 3,
+     "why": "A personal variant with a different name in your user folder leaves the team's skill untouched."
+    }
+   ],
+   "applied": [
+    {
+     "id": "c22c",
+     "prompt": "A team's /migrate skill must only write files, never run shell commands, and developers often forget to name the table. What should the SKILL.md frontmatter include?",
+     "options": [
+      "allowed-tools limited to file writes, plus an argument-hint",
+      "context: fork alone, so the skill runs apart from the chat",
+      "A line in the skill body asking it to avoid shell commands",
+      "A rule in CLAUDE.md telling Claude to ask for the table"
+     ],
+     "answer": 0,
+     "why": "allowed-tools restricts what the skill can do, and argument-hint prompts for the missing parameter."
+    },
+    {
+     "id": "c22d",
+     "prompt": "A team writes its full release checklist into CLAUDE.md, though it is only needed once a week. What is a better home for it?",
+     "options": [
+      "A longer CLAUDE.md with the checklist at the top",
+      "Each developer's personal ~/.claude/CLAUDE.md",
+      "A skill developers invoke when they release",
+      "A comment at the top of the release script"
+     ],
+     "answer": 2,
+     "why": "Skills suit task-specific workflows run on demand, while CLAUDE.md is for standards that should always load."
+    }
+   ]
+  },
+  {
+   "id": "c23",
+   "domain": 3,
+   "ts": "3.4",
+   "title": "Plan first or just do it",
+   "explain": "Plan mode is like drawing a blueprint before building. Claude explores the code and proposes an approach before it changes anything, which suits large, multi-file work with several valid designs. For a small, clear fix, such as one check in one function, direct execution is quicker. The Explore subagent can also take on noisy discovery and hand back just a summary.",
+   "rule": "Plan first for large or architectural changes, and execute directly for small, well-scoped fixes.",
+   "questions": [
+    {
+     "id": "c23a",
+     "prompt": "Which task is the best fit for direct execution?",
+     "options": [
+      "Moving the app from one web framework to another",
+      "Choosing between two queue systems for a new service",
+      "Deciding which shared modules each service should own",
+      "Adding a null check to one function with a clear bug"
+     ],
+     "answer": 3,
+     "why": "A small, well-scoped change in one place does not need a planning phase."
+    },
+    {
+     "id": "c23b",
+     "prompt": "What is the main benefit of plan mode on a large change?",
+     "options": [
+      "It writes code faster by skipping review steps",
+      "It lets Claude work without tools for the whole task",
+      "It explores and designs before any files change",
+      "It removes the need to test the changes afterward"
+     ],
+     "answer": 2,
+     "why": "Plan mode lets Claude explore safely and settle on an approach before committing to edits, which prevents rework."
+    }
+   ],
+   "applied": [
+    {
+     "id": "c23c",
+     "prompt": "You must migrate a logging library used in about 50 files. The approach is unclear and some call sites differ. What is the best workflow?",
+     "options": [
+      "Edit files directly one by one and fix problems as they appear",
+      "Plan the migration first, then execute the plan directly",
+      "Stay in plan mode for the whole job, including every edit",
+      "Ask Claude to change all 50 files in one direct prompt"
+     ],
+     "answer": 1,
+     "why": "Plan mode suits the investigation, and direct execution suits carrying out the agreed plan."
+    },
+    {
+     "id": "c23d",
+     "prompt": "During a long multi-phase task, the discovery step fills the main context with pages of file listings and search output. What would help?",
+     "options": [
+      "Run discovery in the Explore subagent and keep its summary",
+      "Paste the listings into a note and reread it later on",
+      "Skip discovery and start editing files straight away",
+      "Turn off plan mode so the output is a bit shorter"
+     ],
+     "answer": 0,
+     "why": "The Explore subagent isolates verbose discovery and returns a summary, which protects the main context."
+    }
+   ]
+  },
+  {
+   "id": "c24",
+   "domain": 3,
+   "ts": "3.5",
+   "title": "Show, test and ask",
+   "explain": "When words alone keep being misread, show Claude what you mean. Two or three concrete input and output examples settle a transformation faster than another paragraph. Writing tests first and sharing the failures gives Claude a clear target, and letting Claude interview you first surfaces questions you had not thought of.",
+   "rule": "Use concrete examples, failing tests and the interview pattern instead of rewording vague instructions.",
+   "questions": [
+    {
+     "id": "c24a",
+     "prompt": "Claude keeps formatting phone numbers differently from what you described in words. What helps most?",
+     "options": [
+      "Show two or three input and output examples",
+      "Describe the format again in a longer paragraph",
+      "Ask Claude to be more careful with the format",
+      "Let Claude pick any format it prefers"
+     ],
+     "answer": 0,
+     "why": "Concrete examples communicate a transformation more clearly than prose that is being read inconsistently."
+    },
+    {
+     "id": "c24b",
+     "prompt": "What is the interview pattern?",
+     "options": [
+      "You quiz Claude on the code after it is done",
+      "Claude asks you questions before building",
+      "Two Claude sessions debate the design together",
+      "Claude interviews users to collect feature requests"
+     ],
+     "answer": 1,
+     "why": "In the interview pattern, Claude asks questions first to surface considerations you may not have anticipated."
+    }
+   ],
+   "applied": [
+    {
+     "id": "c24c",
+     "prompt": "A data import script has three problems. Fixing the parser changes how the date bug shows up, and the third is an unrelated typo in a log message. How should you send them?",
+     "options": [
+      "Send all three in separate messages, one after another",
+      "Send only the typo first because it is the quickest one",
+      "Send the two linked issues together, and the typo on its own",
+      "Wait until more bugs appear and then send them together"
+     ],
+     "answer": 2,
+     "why": "Interacting problems belong in one detailed message, while an independent issue can be fixed separately."
+    },
+    {
+     "id": "c24d",
+     "prompt": "A migration script crashes on rows with null values, and two written explanations have not fixed it. What should you send next?",
+     "options": [
+      "A longer explanation of why null values matter here",
+      "A request to rewrite the whole script from scratch",
+      "A note asking Claude to think harder about edge cases",
+      "A test case with null input and its expected output"
+     ],
+     "answer": 3,
+     "why": "A specific test case with input and expected output shows exactly how the edge case must behave."
+    }
+   ]
+  },
+  {
+   "id": "c25",
+   "domain": 4,
+   "ts": "4.2",
+   "title": "Teach by example",
+   "explain": "When detailed instructions still give uneven results, show a few worked examples. Two to four well-chosen examples teach the format you want and how to handle tricky, borderline cases. The best ones explain why one choice beat a close alternative, so Claude can apply the same judgment to new cases it has never seen.",
+   "rule": "Use two to four targeted examples, with reasoning, when instructions alone give inconsistent results.",
+   "questions": [
+    {
+     "id": "c25a",
+     "prompt": "Your instructions describe the review format in detail, yet every finding looks different. What is the most effective next step?",
+     "options": [
+      "Repeat the format rules a second time in capitals",
+      "Ask Claude to keep its findings short and tidy",
+      "Add a few examples of the exact format",
+      "Limit the output to only the top five findings"
+     ],
+     "answer": 2,
+     "why": "Few-shot examples are the most effective way to get consistent formatting when instructions alone fall short."
+    },
+    {
+     "id": "c25b",
+     "prompt": "What makes a few-shot example for an ambiguous case most useful?",
+     "options": [
+      "It shows why one choice beat a close alternative",
+      "It is very long and covers every possible situation",
+      "It is copied from the exact input the model will see",
+      "It lists only cases the model gets right"
+     ],
+     "answer": 0,
+     "why": "Showing the reasoning behind a choice helps Claude generalize that judgment to new cases."
+    }
+   ],
+   "applied": [
+    {
+     "id": "c25c",
+     "prompt": "An extraction agent often returns null for a required field when a document puts it somewhere unusual, such as a footnote. What should you add?",
+     "options": [
+      "A rule saying the field must never be left empty",
+      "A retry that reruns the same prompt until it fills",
+      "A larger model that reads each document slowly",
+      "A few examples of extraction from varied layouts"
+     ],
+     "answer": 3,
+     "why": "Examples that cover varied document structures teach Claude where to look, which reduces empty extractions."
+    },
+    {
+     "id": "c25d",
+     "prompt": "A code reviewer keeps flagging a safe, common pattern as a bug. You want that to stop without missing real bugs that look similar. What helps most?",
+     "options": [
+      "Tell the reviewer to skip anything that looks like it",
+      "Add examples contrasting the safe pattern with a real bug",
+      "Add fifty examples of the safe pattern to the prompt",
+      "Remove that whole category of check from the review"
+     ],
+     "answer": 1,
+     "why": "Contrasting acceptable code with genuine issues cuts false positives while still letting Claude generalize."
+    }
+   ]
+  },
+  {
+   "id": "c26",
+   "domain": 4,
+   "ts": "4.4",
+   "title": "Retry with the error attached",
+   "explain": "When an extraction fails a check, a blind retry often repeats the mistake. Send a follow-up with the original document, the failed output and the exact error, such as \"line items sum to 90 but the total says 100\". This works for format and structure mistakes, but no retry can find information that is not in the document at all.",
+   "rule": "Retry with the specific error attached, and stop retrying when the data is missing from the source.",
+   "questions": [
+    {
+     "id": "c26a",
+     "prompt": "An extraction fails validation because a date is in the wrong format. What should the retry include?",
+     "options": [
+      "The same prompt again, unchanged, for another try",
+      "The document, its failed output and the error",
+      "Only the error message, without the document",
+      "A short note telling Claude its answer was wrong"
+     ],
+     "answer": 1,
+     "why": "Giving Claude the source, its failed attempt and the specific error guides it to the correction."
+    },
+    {
+     "id": "c26b",
+     "prompt": "When will retrying an extraction NOT help?",
+     "options": [
+      "When a date came back in the wrong format",
+      "When a value landed in the wrong field",
+      "When the output structure was malformed",
+      "When the value is not in the document"
+     ],
+     "answer": 3,
+     "why": "Retries fix format and structure mistakes, but they cannot produce information the source lacks."
+    }
+   ],
+   "applied": [
+    {
+     "id": "c26c",
+     "prompt": "An invoice extraction reports a total of 500, but its line items add up to 450. How can you catch this kind of mismatch automatically?",
+     "options": [
+      "Extract a calculated total next to the stated total and compare",
+      "Make the total field required in the JSON schema",
+      "Ask Claude to be extra careful when reading totals",
+      "Use tool use so the output always fits the schema"
+     ],
+     "answer": 0,
+     "why": "A schema guarantees shape, not correct values, so extracting both totals lets code flag the discrepancy."
+    },
+    {
+     "id": "c26d",
+     "prompt": "A contract extraction keeps failing on the renewal date. The contract says \"see Appendix B\", and the appendix was never sent. Retries with error feedback have not helped. What is the real issue?",
+     "options": [
+      "The error feedback was not specific enough",
+      "The model needs a few more retries to succeed",
+      "The date is in a document that was never sent",
+      "The schema should make the date a required field"
+     ],
+     "answer": 2,
+     "why": "Retries cannot recover information that exists only in a document Claude never received."
+    }
+   ]
+  },
+  {
+   "id": "c27",
+   "domain": 4,
+   "ts": "4.6",
+   "title": "A fresh pair of eyes",
+   "explain": "Checking your own essay right after writing it is hard, because you remember what you meant. Claude has the same problem: in the same session it keeps its earlier reasoning and is less likely to question it. A second, independent Claude instance that sees only the output, not the reasoning behind it, catches more subtle issues. For a large change, also review each file on its own and then run a separate pass on how the files connect.",
+   "rule": "Review generated work with a separate instance that does not carry the generator's reasoning.",
+   "questions": [
+    {
+     "id": "c27a",
+     "prompt": "Why is a same-session self-review weaker than an independent review?",
+     "options": [
+      "The same session cannot read the code it just wrote",
+      "Self-review always uses more tokens than a new instance",
+      "Models are not allowed to review their own output",
+      "It keeps its own reasoning and rarely doubts it"
+     ],
+     "answer": 3,
+     "why": "The generating session carries its earlier reasoning, which makes it less likely to doubt its own choices."
+    },
+    {
+     "id": "c27b",
+     "prompt": "Which setup catches the most subtle bugs in generated code?",
+     "options": [
+      "Ask the same session to review its work twice",
+      "Turn on extended thinking in the same session",
+      "Send the code to a fresh instance for review",
+      "Add \"check very carefully\" to the prompt"
+     ],
+     "answer": 2,
+     "why": "An independent instance without the generator's context is more effective than self-review or extended thinking."
+    }
+   ],
+   "applied": [
+    {
+     "id": "c27c",
+     "prompt": "A pipeline writes a migration, then asks in the same conversation \"review the migration above for bugs\". It rarely finds any, yet bugs reach production. What should change?",
+     "options": [
+      "Tell the review step to find at least three bugs",
+      "Run the review in a new instance without the history",
+      "Repeat the same-session review until it finds one",
+      "Have the writing step explain its reasoning in detail"
+     ],
+     "answer": 1,
+     "why": "Moving the review to an independent instance removes the reasoning context that blinds self-review."
+    },
+    {
+     "id": "c27d",
+     "prompt": "One review pass over a 30-file pull request gives shallow comments and calls the same function safe in one file and unsafe in another. What should change?",
+     "options": [
+      "Review each file on its own, then run a cross-file pass",
+      "Tell the reviewer to stay consistent across all files",
+      "Have the generating session review the whole PR again",
+      "Send the full PR to a larger model in a single pass"
+     ],
+     "answer": 0,
+     "why": "Per-file passes keep attention on local issues, and a separate integration pass checks how files connect without contradictory findings."
+    }
+   ]
+  },
+  {
+   "id": "c28",
+   "domain": 5,
+   "ts": "5.4",
+   "title": "Exploring big codebases",
+   "explain": "In a very long exploration session, context fills up and answers can drift, mentioning \"typical patterns\" instead of the specific classes found earlier. Save key findings to a scratchpad file and check it later. Send narrow questions to subagents so their noisy output stays out of the main session, and use /compact when context fills with verbose output.",
+   "rule": "Persist findings in a scratchpad, delegate noisy exploration to subagents and compact when context gets full.",
+   "questions": [
+    {
+     "id": "c28a",
+     "prompt": "Late in a long session, Claude talks about \"typical patterns\" instead of the classes it found earlier. What is happening?",
+     "options": [
+      "Context is degrading after a long, full session",
+      "The codebase changed while the session was open",
+      "Claude is being careful by giving general answers",
+      "The model was switched to a smaller one midway"
+     ],
+     "answer": 0,
+     "why": "Vague, generic answers late in a long session are a sign of context degradation."
+    },
+    {
+     "id": "c28b",
+     "prompt": "What is a scratchpad file for during a long exploration?",
+     "options": [
+      "Storing a full copy of every tool output",
+      "Saving key findings to look at again later",
+      "Holding secrets the agent should keep hidden",
+      "Keeping a draft of the final user answer"
+     ],
+     "answer": 1,
+     "why": "A scratchpad keeps important findings outside the context window, so they survive as the session grows."
+    }
+   ],
+   "applied": [
+    {
+     "id": "c28c",
+     "prompt": "You need every place the refund flow touches, but tracing it fills the main session with hundreds of lines. What is the better approach?",
+     "options": [
+      "Keep tracing in the main session and hope it fits",
+      "Paste all of the trace output into a new message",
+      "Have a subagent trace it and send a summary",
+      "Ask Claude to skip the parts that seem minor"
+     ],
+     "answer": 2,
+     "why": "A subagent isolates the verbose tracing, and the main agent keeps only the summary it needs."
+    },
+    {
+     "id": "c28d",
+     "prompt": "A multi-agent exploration job crashes halfway, and on restart every agent begins from nothing. What design prevents this?",
+     "options": [
+      "Rerun the whole job from the start after a crash",
+      "Keep all state in the coordinator's chat history",
+      "Ask each agent to remember its progress next time",
+      "Agents export state; the coordinator loads a manifest"
+     ],
+     "answer": 3,
+     "why": "Structured state exports plus a manifest let the coordinator resume each agent where it stopped."
+    }
+   ]
+  },
+  {
+   "id": "c29",
+   "domain": 5,
+   "ts": "5.5",
+   "title": "Trust, but sample",
+   "explain": "A headline accuracy number can hide weak spots: a system that is 97% accurate overall might still get one document type wrong half the time. Check accuracy by document type and field before cutting human review. Keep sampling a random slice of high-confidence results, and set confidence thresholds using a labeled set where the right answers are known.",
+   "rule": "Check accuracy per segment, sample high-confidence results and calibrate thresholds on labeled data.",
+   "questions": [
+    {
+     "id": "c29a",
+     "prompt": "An extraction system is 97% accurate overall. Why might that still be risky?",
+     "options": [
+      "It means each field is wrong about 3% of the time",
+      "Accuracy above 95% usually signals overfitting",
+      "It may hide poor accuracy on one document type",
+      "It counts only documents a human has reviewed"
+     ],
+     "answer": 2,
+     "why": "An aggregate number can mask weak performance on specific document types or fields."
+    },
+    {
+     "id": "c29b",
+     "prompt": "Why keep sampling some high-confidence extractions for human review?",
+     "options": [
+      "To measure real error rates and spot new errors",
+      "To keep reviewers busy when the queue is short",
+      "To retrain the model on every sampled result",
+      "Because high confidence often means a wrong result"
+     ],
+     "answer": 0,
+     "why": "Sampling confident results measures their true error rate and catches new error patterns early."
+    }
+   ],
+   "applied": [
+    {
+     "id": "c29c",
+     "prompt": "A team wants to skip human review for every extraction with confidence above 0.9. How should they set that threshold safely?",
+     "options": [
+      "Pick 0.9 because it sounds safe",
+      "Ask the model which threshold it would prefer",
+      "Use last week's average confidence as the line",
+      "Calibrate it on a labeled validation set"
+     ],
+     "answer": 3,
+     "why": "Thresholds should be calibrated against labeled data where the correct answers are known."
+    },
+    {
+     "id": "c29d",
+     "prompt": "Reviewers can check only 200 of 5,000 daily extractions. Which ones should they see first?",
+     "options": [
+      "The first 200 extractions that arrive each morning",
+      "Low-confidence and conflicting-source cases",
+      "Only the extractions the model scored the highest",
+      "Only those from the largest customer accounts"
+     ],
+     "answer": 1,
+     "why": "Limited reviewer time is best spent on low-confidence and ambiguous or contradictory cases."
+    }
+   ]
+  },
+  {
+   "id": "c30",
+   "domain": 5,
+   "ts": "5.6",
+   "title": "Keep claims tied to sources",
+   "explain": "When findings are summarized, the link between a claim and its source is easy to lose. Have each subagent return claims paired with their source, such as the URL, document name and a short excerpt, plus a date, and keep those pairs through synthesis. When two good sources disagree, show both values with their sources instead of quietly picking one.",
+   "rule": "Keep each claim tied to its source and date, and report conflicts openly instead of choosing a winner.",
+   "questions": [
+    {
+     "id": "c30a",
+     "prompt": "Two credible reports give different market sizes. What should the synthesis do?",
+     "options": [
+      "Average the two numbers into one single figure",
+      "Show both values, each with its source noted",
+      "Keep the one from the better known publisher",
+      "Leave the market size out of the report"
+     ],
+     "answer": 1,
+     "why": "Conflicting credible values should be reported together with attribution rather than resolved arbitrarily."
+    },
+    {
+     "id": "c30b",
+     "prompt": "What should a research subagent return with each claim so attribution survives?",
+     "options": [
+      "A confidence score from one to ten",
+      "A short summary of its reasoning steps",
+      "A list of related topics to search next",
+      "Its source: URL, document and excerpt"
+     ],
+     "answer": 3,
+     "why": "A structured claim-source mapping lets later agents keep attribution through synthesis."
+    }
+   ],
+   "applied": [
+    {
+     "id": "c30c",
+     "prompt": "A report flags a contradiction between two sources on a statistic. One source is from 2019 and the other is from 2024. What would have prevented the false alarm?",
+     "options": [
+      "Requiring subagents to include publication dates",
+      "Telling synthesis to always prefer the newer source",
+      "Dropping any statistic that appears in two sources",
+      "Asking the user which of the sources they trust"
+     ],
+     "answer": 0,
+     "why": "Dates in structured outputs let synthesis see a change over time instead of a contradiction."
+    },
+    {
+     "id": "c30d",
+     "prompt": "A final report has many claims but no way to tell where each came from, even though the search subagents recorded URLs. Where was attribution most likely lost?",
+     "options": [
+      "In the search tool, which returned too many results",
+      "In the user's question, which did not ask for sources",
+      "In a summary step that compressed the findings",
+      "In the model choice, which was too small for citations"
+     ],
+     "answer": 2,
+     "why": "Summaries that compress findings without claim-source mappings are where attribution gets dropped."
     }
    ]
   }

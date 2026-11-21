@@ -1,0 +1,671 @@
+{
+ "id": "s5",
+ "title": "Claude Code for Continuous Integration",
+ "setup": "Your organization runs Claude Code in its CI/CD pipeline on every pull request. The pipeline invokes Claude Code non-interactively to review diffs, generate unit tests for changed code, and post findings as inline PR comments. Some checks block merging and others run on a nightly schedule. Engineering leadership measures success by how often developers act on the feedback rather than dismissing it.",
+ "questions": [
+  {
+   "id": "s5q1",
+   "domain": 3,
+   "ts": "3.6",
+   "type": "single",
+   "prompt": "The review step runs claude -p with a prompt that asks for findings as JSON. A script parses stdout and posts each finding as an inline comment. About 1 run in 12 fails to parse because the output is wrapped in a markdown code fence or starts with a sentence such as \"Here are the findings:\". What is the best fix?",
+   "options": [
+    {
+     "text": "Tighten the prompt to say the response must contain only raw JSON with no commentary or fences, and add a regex step that strips code fences before parsing.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "Prose instructions reduce the failure rate but never remove it, and the regex only covers the failure shapes you have already seen."
+    },
+    {
+     "text": "Pipe the review output into a second claude -p call whose only job is to convert the previous response into valid JSON before the posting script runs.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A second model call doubles cost and latency and can fail in the same way. The CLI already has a way to enforce structured output."
+    },
+    {
+     "text": "Add four examples of correctly formatted JSON findings to the project CLAUDE.md so CI-invoked sessions see exactly what output format they are expected to produce.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "Examples improve consistency but still rely on the model choosing to comply. Parsing reliability in CI needs enforced structure, not more demonstrations."
+    },
+    {
+     "text": "Run the review with --output-format json and a --json-schema that describes each finding, then have the script parse that structured result instead of free text.",
+     "correct": true,
+     "trap": null,
+     "rationale": "These flags make Claude Code emit machine-parseable output that matches the schema, which is what automated posting of inline comments needs."
+    }
+   ],
+   "takeaway": "In CI, use --output-format json with --json-schema to get machine-parseable findings rather than asking for JSON in prose."
+  },
+  {
+   "id": "s5q2",
+   "domain": 4,
+   "ts": "4.1",
+   "type": "single",
+   "prompt": "The review reports five categories: security, correctness, performance, naming, and comment accuracy. Over a month, developers dismissed 71% of comment-accuracy findings, most of which flagged comments that were merely terse or loosely worded. A survey shows developers now also dismiss security findings without reading them. What should you do first?",
+   "options": [
+    {
+     "text": "Turn off the comment-accuracy category for now, and rewrite its criteria so it flags only comments whose described behavior contradicts what the code actually does.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Pausing the noisy category restores trust in the accurate ones, and explicit categorical criteria are what actually improve precision."
+    },
+    {
+     "text": "Add an instruction to the review prompt telling Claude to be conservative and to report only findings it is highly confident about across all five categories.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "General instructions such as \"be conservative\" do not improve precision the way specific criteria do, and they risk suppressing real security findings."
+    },
+    {
+     "text": "Have Claude attach a 1 to 10 confidence score to each finding and suppress comment-accuracy findings scored below 8 before the pipeline posts them.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "Self-reported confidence is poorly calibrated. The model is already confident about the terse-comment flags that developers dismiss."
+    },
+    {
+     "text": "Train a lightweight classifier on the month of dismissed findings and use it to filter out comments developers are likely to dismiss before they are posted.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A classifier needs labeled data and upkeep, and it hides a prompt problem instead of fixing the vague criteria that create the noise."
+    }
+   ],
+   "takeaway": "Restore developer trust by disabling high false positive categories while replacing vague instructions with explicit reporting criteria."
+  },
+  {
+   "id": "s5q3",
+   "domain": 4,
+   "ts": "4.6",
+   "type": "single",
+   "prompt": "A pipeline step uses one Claude Code session to write a fix for a failing integration test. In the same session it then asks Claude to review the fix for bugs before opening a PR. Human reviewers keep finding off-by-one and null-handling bugs that this review step approved. How should you restructure the review step?",
+   "options": [
+    {
+     "text": "Enable extended thinking for the review turn in the same session so Claude reasons more carefully about edge cases in the code it just generated before approving it.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "More reasoning inside the same session still starts from the generator's own assumptions, so it tends to confirm the decisions it already made."
+    },
+    {
+     "text": "Add a review checklist to the prompt telling Claude to assume the fix contains bugs and to critique it as a skeptical senior engineer would before approving it.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "A skeptical persona is still a prompt applied to a session that holds the reasoning behind the fix. It does not remove that context."
+    },
+    {
+     "text": "Review the fix with a separate Claude instance that receives only the diff and the failing test, without the generating session's reasoning.",
+     "correct": true,
+     "trap": null,
+     "rationale": "An independent instance has no prior reasoning to defend, so it is more likely to question the edge cases the generator glossed over."
+    },
+    {
+     "text": "Move the review to a nightly Message Batches job that re-reviews every generated fix, so a fuller analysis can run without slowing down the PR pipeline.",
+     "correct": false,
+     "trap": "batch-for-blocking",
+     "rationale": "The review gates opening the PR, so it is blocking work. A batch job with no latency guarantee cannot serve as that gate."
+    }
+   ],
+   "takeaway": "Use an independent review instance without the generator's context, because a session is poor at questioning its own output."
+  },
+  {
+   "id": "s5q4",
+   "domain": 3,
+   "ts": "3.6",
+   "type": "multi",
+   "prompt": "Two complaints arrive about the PR pipeline. When a developer pushes new commits, the re-run review posts a fresh copy of every finding, including ones already raised on earlier commits. Separately, the test-generation step keeps proposing test cases that already exist in the module's test file. Which changes address these complaints? Select TWO.",
+   "options": [
+    {
+     "text": "Pass the findings from the previous review run into the prompt, and instruct Claude to report only issues that are new or still unaddressed since that run.",
+     "correct": true,
+     "trap": null,
+     "rationale": "A CI run has no memory of earlier runs, so the prior findings must be supplied in context. Then Claude can skip what was already raised."
+    },
+    {
+     "text": "Add a line to the project CLAUDE.md telling Claude never to repeat a comment it made on the pull request before and to skip any scenario it has tested already.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "The instruction refers to history the CI session cannot see. Without prior findings or tests in context, Claude has nothing to compare against."
+    },
+    {
+     "text": "Move both the re-run review and test generation to the Message Batches API, and deduplicate the results by custom_id before anything is posted to the PR.",
+     "correct": false,
+     "trap": "batch-for-blocking",
+     "rationale": "PR feedback is expected promptly and batches have no latency guarantee. custom_id correlates requests with responses and does nothing to detect duplicate findings."
+    },
+    {
+     "text": "Include the module's existing test file in the test-generation context, so Claude can see which scenarios are already covered before it proposes any new ones.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Claude can only avoid duplicate scenarios it can see. Providing existing tests in context is the direct fix for redundant test suggestions."
+    },
+    {
+     "text": "Hash each comment body and drop any new comment whose hash matches one already on the PR, and do the same for generated test names before they are committed.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Exact-match hashing misses the same finding or test worded differently, so duplicates still get through while the cause stays in place."
+    }
+   ],
+   "takeaway": "Give CI runs the context they lack, prior findings for re-reviews and existing tests for test generation, instead of filtering output afterward."
+  },
+  {
+   "id": "s5q5",
+   "domain": 4,
+   "ts": "4.5",
+   "type": "single",
+   "prompt": "To cut costs, the team moved its nightly test-generation job to the Message Batches API. In the old synchronous version, Claude wrote tests, called a run_tests tool, read the failures, and revised the tests over several turns. Since the move, batch results contain test files that were never executed, and about 30% of them fail when CI runs them the next morning. What is the best way to keep the cost savings?",
+   "options": [
+    {
+     "text": "Set tool_choice to force run_tests in each batch request so that Claude is required to execute the generated tests before the batch request is allowed to complete.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Forcing the tool only makes Claude emit a tool_use block. Nothing executes it and returns the result within a batch request, so the tests still never run."
+    },
+    {
+     "text": "Batch only the first-pass generation, run the generated tests in your own job runner, and submit a follow-up batch with the failing tests and their error output.",
+     "correct": true,
+     "trap": null,
+     "rationale": "The Batches API does not support multi-turn tool calling inside one request. Running tests between batches restores the feedback loop while keeping the discount."
+    },
+    {
+     "text": "Move the nightly job back to synchronous calls, because tests that need execution feedback cannot be produced with batch processing in any form or configuration.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "This gives up the savings for a job that is latency tolerant. The limitation is per request, and the loop can be rebuilt across successive batches."
+    },
+    {
+     "text": "Raise max_tokens in each batch request so Claude has room to simulate the test run in its own reasoning and correct failing assertions before returning a file.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "Mentally simulating a test run is not executing it. The model checking its own output misses the same failures that real execution would expose."
+    }
+   ],
+   "takeaway": "The Batches API cannot run tools mid-request, so latency-tolerant work that needs tool feedback must loop across batches or stay synchronous."
+  },
+  {
+   "id": "s5q6",
+   "domain": 3,
+   "ts": "3.6",
+   "type": "single",
+   "prompt": "CI-invoked test generation produces many low-value tests, such as assertions on simple getters and constructors. It also builds database objects by hand even though the repository provides factory fixtures in tests/factories/. Developers delete most of the generated tests. Where should guidance on what makes a test valuable and which fixtures to use live?",
+   "options": [
+    {
+     "text": "In ~/.claude/CLAUDE.md baked into the CI runner image, so every pipeline run loads the testing standards without adding files developers must maintain in the repo.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "User-level memory on a runner image is invisible to developers and not versioned with the code, so it drifts from the fixtures it describes."
+    },
+    {
+     "text": "In the -p prompt string of the pipeline script, together with ten example tests that cover every fixture factory and every assertion style the team uses.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "Ten full examples bloat every invocation and teach by imitation rather than stating the criteria. They are also buried in a script instead of shared project context."
+    },
+    {
+     "text": "In a post-generation script that runs coverage and deletes any generated test that does not raise line coverage before the tests are committed to the branch.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Filtering after generation wastes the work and treats coverage as value. Claude still has no idea which fixtures to use or what the team considers worth testing."
+    },
+    {
+     "text": "In the project CLAUDE.md, documenting the team's criteria for valuable tests and the fixture factories that exist, so CI-invoked Claude Code reads them.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Project CLAUDE.md is how CI-invoked Claude Code receives project context such as testing standards and fixture conventions, and it is versioned with the code."
+    }
+   ],
+   "takeaway": "Document testing standards and available fixtures in the project CLAUDE.md so CI-invoked Claude Code generates higher-value tests."
+  },
+  {
+   "id": "s5q7",
+   "domain": 4,
+   "ts": "4.4",
+   "type": "single",
+   "prompt": "Developers dismiss about 30% of the review bot's inline comments. The team wants to learn which kinds of code trigger the findings that get dismissed, so they can fix the prompt where it matters most. Each finding currently has file, line, severity and message fields. What should they add first?",
+   "options": [
+    {
+     "text": "Add a detected_pattern field to each finding naming the code construct that triggered it, then analyze which patterns get dismissed most.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Tagging findings by the construct that triggered them turns dismissals into data, showing exactly which criteria produce false positives."
+    },
+    {
+     "text": "Train a model on past dismissed comments to predict whether a new comment will be dismissed, and suppress any comment it scores as likely.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "This hides comments without explaining why they are wrong, and it needs labeled data and new infrastructure."
+    },
+    {
+     "text": "Ask Claude, in the same review session, to rate how confident it is in each finding, and hide any finding it rates below 6 out of 10.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "Self-rated confidence from the session that made the finding is poorly calibrated, and it reveals nothing about which patterns misfire."
+    },
+    {
+     "text": "Raise the minimum severity for posting comments from low to medium, so fewer findings get posted and the dismissal rate goes down.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "The dismissal rate drops because fewer comments are posted, not because they are more accurate. Real issues are hidden too."
+    }
+   ],
+   "takeaway": "Add a detected_pattern field to findings so you can see which code constructs cause false positives and fix those criteria."
+  },
+  {
+   "id": "s5q8",
+   "domain": 1,
+   "ts": "1.6",
+   "type": "single",
+   "prompt": "Leadership asks the nightly pipeline to \"add comprehensive tests\" to the legacy billing service, which has 140 source files and almost no tests. The first run walked the files in alphabetical order and spent its whole budget on small helper modules, leaving the invoice and payment paths untested. How should you structure this task?",
+   "options": [
+    {
+     "text": "Spawn one subagent per source file in parallel, each writing tests for its own file, and merge all 140 resulting test files into one nightly pull request.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "This adds 140 agents but still treats every file as equally important, so effort is not focused on the invoice and payment paths."
+    },
+    {
+     "text": "First have Claude map the service structure and find the high-impact areas, then follow a prioritized test plan that it revises as new dependencies turn up.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Open-ended tasks like this call for dynamic decomposition: map structure, identify high-impact areas, then work a prioritized plan that adapts to what is found."
+    },
+    {
+     "text": "Raise the job's turn limit and time budget so the alphabetical walk can reach every file in the service, including the invoice and payment modules.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "A bigger budget lets the same unprioritized walk run longer. It does not make the job find and focus on the areas that matter most."
+    },
+    {
+     "text": "Add fifteen example test files from other services to the prompt, so Claude sees what comprehensive coverage looks like before it starts on billing.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "The gap is the lack of a plan and priorities, not knowledge of what a test looks like. More examples do not change the order of work."
+    }
+   ],
+   "takeaway": "For open-ended work like adding tests to a legacy codebase, map the structure first, then follow a prioritized plan that adapts to what you find."
+  },
+  {
+   "id": "s5q9",
+   "domain": 2,
+   "ts": "2.1",
+   "type": "single",
+   "prompt": "The review agent has two MCP tools with detailed, distinct descriptions: search_code finds definitions and callers in the repository, and search_tickets finds issue-tracker tickets. The system prompt says \"Before commenting on a bug fix, always search the codebase for the original bug report.\" Logs show the agent sending ticket-style queries such as \"login timeout customer report\" to search_code. What should you change first?",
+   "options": [
+    {
+     "text": "Expand both tool descriptions further with more example queries and edge cases, since descriptions are the main signal the model uses to pick a tool.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "The descriptions are already clear. The system prompt's wording \"search the codebase\" is what pulls the agent to search_code, so better descriptions will not fix it."
+    },
+    {
+     "text": "Merge search_code and search_tickets into one search tool that sends every query to both backends and returns whichever gives more matches.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Merging removes a clean boundary between two well-described tools and adds noisy mixed results, when a one-line prompt fix addresses the cause."
+    },
+    {
+     "text": "Reword the instruction to say original bug reports are found with search_tickets, removing the phrase that ties them to the codebase.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Keyword-sensitive system prompt wording can override good tool descriptions. Fixing the instruction removes the false association with search_code."
+    },
+    {
+     "text": "Add ten examples to the system prompt of bug-fix reviews where the agent calls search_tickets, covering every ticket query style seen so far.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "Examples would fight against an instruction that still says to search the codebase. The misleading wording is the gap to fix."
+    }
+   ],
+   "takeaway": "Check system prompts for keyword-sensitive wording that can override good tool descriptions and pull the agent toward the wrong tool."
+  },
+  {
+   "id": "s5q10",
+   "domain": 3,
+   "ts": "3.6",
+   "type": "single",
+   "prompt": "The team lead wrote review criteria in her ~/.claude/CLAUDE.md: flag missing authorization checks on new endpoints, and skip generated code under src/gen/. Her local Claude Code reviews follow them, but teammates' local reviews and the CI review job, which runs claude -p on a fresh runner against the repository checkout, ignore both rules. The team wants the same criteria applied everywhere. What is the best fix?",
+   "options": [
+    {
+     "text": "Copy her ~/.claude/CLAUDE.md into the home directory of the CI runner image, so the runner loads the user-level instructions she has locally.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "This would make CI load the rules, but teammates' local reviews still miss them, and team criteria would live in one person's unversioned file that drifts from the repo."
+    },
+    {
+     "text": "Add a script after the review that deletes findings under src/gen/ and posts an extra comment on any new endpoint file lacking an auth decorator.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "This rebuilds part of the criteria in brittle post-processing instead of giving Claude the context, and a decorator check is not a real authorization review."
+    },
+    {
+     "text": "Move the criteria into the project CLAUDE.md committed to the repository, so CI-invoked Claude Code loads them from the checkout on every run.",
+     "correct": true,
+     "trap": null,
+     "rationale": "CLAUDE.md in the project is the mechanism for giving CI-invoked Claude Code review criteria, and it is shared with the whole team via version control."
+    },
+    {
+     "text": "Add a second claude -p call that receives her criteria and filters the first call's findings, removing anything that does not match her checklist.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A second call doubles cost and can only remove findings. It cannot add the missing authorization findings the first review never produced."
+    }
+   ],
+   "takeaway": "CI-invoked Claude Code gets project context such as review criteria from the project CLAUDE.md in the repository, not from one user's settings."
+  },
+  {
+   "id": "s5q11",
+   "domain": 4,
+   "ts": "4.1",
+   "type": "single",
+   "prompt": "The review prompt says to rate each finding critical, high, medium, or low \"based on its impact.\" An audit finds the same missing null check on a request parameter rated critical in one pull request and low in another, and developers have started ignoring severity labels. What change will make severity classification consistent?",
+   "options": [
+    {
+     "text": "Add an instruction asking Claude to think carefully and stay consistent with its earlier severity ratings whenever it reviews a similar issue.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "Each CI run has no memory of earlier ratings, and a request to be consistent does not tell Claude where the boundaries between levels are."
+    },
+    {
+     "text": "Run each review three times and give every finding the severity that appears most often across the three runs before posting it.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Tripling cost averages noise from vague criteria. The same unclear definition of each level still drives every run."
+    },
+    {
+     "text": "Add thirty past findings with their assigned severity to the prompt, drawn from every module, so Claude can copy the closest match.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "Past ratings were themselves inconsistent, and a pile of examples without stated criteria does not define where each level begins."
+    },
+    {
+     "text": "Define each severity level with explicit criteria and a concrete code example, such as a null dereference on a request path for high.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Explicit severity criteria with concrete code examples for each level give Claude a fixed reference, which produces consistent classification."
+    }
+   ],
+   "takeaway": "Consistent severity needs explicit criteria with a concrete code example for each level, not a vague instruction to rate by impact."
+  },
+  {
+   "id": "s5q12",
+   "domain": 4,
+   "ts": "4.1",
+   "type": "single",
+   "prompt": "The review prompt ends with \"Only report high-confidence findings.\" Developers still dismiss most comments, which flag variable names, early returns, and other idioms the codebase uses everywhere, while real logic bugs get buried among them. What should you change in the prompt?",
+   "options": [
+    {
+     "text": "Strengthen the line to say Claude must be extremely conservative and report a finding only when it is certain the issue is worth a developer's time.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "General instructions like \"be conservative\" fail to improve precision. Claude is often confident about style nits, so they keep coming."
+    },
+    {
+     "text": "Add twenty example findings that developers accepted last quarter, covering every language and module in the repository, ahead of the instructions.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "The gap is the lack of criteria for what to skip. A large set of accepted findings does not tell Claude that local idioms are out of scope."
+    },
+    {
+     "text": "Replace the confidence line with explicit criteria: report logic bugs, security issues, and missing error handling; skip style and local patterns.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Specific categorical criteria for what to report and what to skip improve precision far more than confidence-based filtering."
+    },
+    {
+     "text": "Give the reviewer the repository linter, a style-guide search tool, and git blame, so it can check each finding against team history before posting.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "More tools add decision complexity without defining which issues matter. The noise comes from missing criteria, not missing data."
+    }
+   ],
+   "takeaway": "Precision comes from categorical criteria about what to report and what to skip, not from asking for confidence or conservatism."
+  },
+  {
+   "id": "s5q13",
+   "domain": 4,
+   "ts": "4.1",
+   "type": "multi",
+   "prompt": "The team is adding a new \"missing test coverage\" category to the PR review, alongside the security and correctness categories developers trust today. Leadership worries that a noisy new category could make developers start dismissing every finding. Which practices should the team adopt for the launch? Select TWO.",
+   "options": [
+    {
+     "text": "Tell Claude to report coverage gaps only when it is highly confident, so the new category starts out quiet and earns trust gradually.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "Confidence wording does not improve precision. Without categorical criteria the category stays noisy."
+    },
+    {
+     "text": "Write explicit criteria for the category, such as a new branch in changed code that no test exercises, plus cases to skip.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Explicit criteria for what to flag and what to skip are the main lever for keeping a new category precise."
+    },
+    {
+     "text": "Have Claude rate each coverage finding from 1 to 10 in the same review pass, and post only the ones it scores at 8 or above.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "Uncalibrated self-rated scores from the same pass are a poor filter, and they do not define what a real coverage gap is."
+    },
+    {
+     "text": "Track dismissal rates per category, and switch the new category off for a while if false positives climb, while its prompt is improved.",
+     "correct": true,
+     "trap": null,
+     "rationale": "High false-positive categories undermine trust in accurate ones, so temporarily disabling a noisy category protects trust while you fix it."
+    },
+    {
+     "text": "Build a classifier that predicts which coverage findings developers will dismiss, trained on a month of shadow-mode findings, before launch.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A trained filter is heavy infrastructure for a problem that explicit criteria and per-category monitoring handle directly."
+    }
+   ],
+   "takeaway": "A noisy category erodes trust in every category, so launch with explicit criteria and be ready to switch off a noisy one while you fix it."
+  },
+  {
+   "id": "s5q14",
+   "domain": 4,
+   "ts": "4.2",
+   "type": "single",
+   "prompt": "Review findings are produced with --json-schema, and every finding has location, issue, severity, and suggested_fix. Developers say the content still varies: some locations are line ranges and others are function names, and some suggested fixes are concrete code while others just say \"consider refactoring.\" The prompt already describes each field in a paragraph. What is the most effective next step?",
+   "options": [
+    {
+     "text": "Add two or three example findings to the prompt that show a precise line location, a clear issue, a severity, and a concrete suggested fix.",
+     "correct": true,
+     "trap": null,
+     "rationale": "When detailed instructions give inconsistent output, a few examples demonstrating the exact desired format are the most effective technique."
+    },
+    {
+     "text": "Rewrite the field descriptions in capital letters, stating that every suggested fix MUST contain code and every location MUST be a line range.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "Detailed prose is already producing inconsistent results. Louder wording is still prose and does not show what a good finding looks like."
+    },
+    {
+     "text": "Have Claude reread its findings at the end of the same session and rewrite any location or suggested fix that it judges to be too vague.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "The session that wrote vague fixes judged them acceptable once already. Without a shown target, a second look in the same context changes little."
+    },
+    {
+     "text": "Send every finding to a second claude -p call that rewrites the location and suggested fix into the team's preferred style before posting.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A rewrite call cannot invent a concrete fix the reviewer never produced, and it doubles cost when examples would fix the source."
+    }
+   ],
+   "takeaway": "When detailed instructions still give inconsistent output, a few examples of the exact format you want are the most effective fix."
+  },
+  {
+   "id": "s5q15",
+   "domain": 4,
+   "ts": "4.2",
+   "type": "single",
+   "prompt": "The security review flags every SQL string the code builds as possible injection, including queries that join constant table names and pass all user values as bound parameters. The team has added nine named exceptions to the prompt, but each week developers find another safe variant that still gets flagged. How should you improve precision?",
+   "options": [
+    {
+     "text": "Add a few examples that contrast safe and unsafe query building, each explaining why it is or is not injectable, so that Claude can generalize.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Few-shot examples that separate acceptable patterns from genuine issues, with reasoning, let the model generalize to novel safe variants."
+    },
+    {
+     "text": "Keep adding each newly reported safe variant to the exception list in the prompt, so the list eventually covers every pattern the codebase uses.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "A fixed list only matches cases already seen, which is why a new variant appears every week. Claude needs to learn the distinction, not the list."
+    },
+    {
+     "text": "Paste every SQL query in the repository into the prompt, each labeled safe or unsafe, so Claude has seen all of them before it reviews a diff.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "Hundreds of labeled queries bloat every request and teach matching, not judgment. A few contrasting examples with reasons work better."
+    },
+    {
+     "text": "Connect a taint-analysis MCP server, a schema server, and a query-log server to the reviewer so it can trace every value to its source first.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "Three new servers add decision complexity and cost for a reviewer whose real gap is not knowing what makes a query safe."
+    }
+   ],
+   "takeaway": "Few-shot examples that show why a pattern is acceptable or a genuine issue let Claude generalize beyond a fixed list of cases."
+  },
+  {
+   "id": "s5q16",
+   "domain": 4,
+   "ts": "4.5",
+   "type": "single",
+   "prompt": "A nightly Message Batches job generates tests for about 2,000 changed functions. The team just rewrote the prompt for a new test framework. The last time a rewritten prompt went straight into the full batch, a systematic import mistake forced them to resubmit 35% of the requests. What should they do before the next full nightly run?",
+   "options": [
+    {
+     "text": "Submit the full batch tonight and make the next morning's pre-merge check wait on its results, so no pull request merges before the tests are verified.",
+     "correct": false,
+     "trap": "batch-for-blocking",
+     "rationale": "Batches have up to a 24-hour window with no latency SLA, so gating merges on them blocks developers. It also does nothing about prompt quality."
+    },
+    {
+     "text": "Submit the full batch as usual and, when results return, resubmit only the requests with import errors, found by custom_id, using the same prompt.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Resubmitting with the same prompt repeats a systematic mistake, and it pays for the failed first pass again."
+    },
+    {
+     "text": "Run the new prompt on a small, representative sample of functions, review the output, and refine it until first-pass results are good, then batch them all.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Refining the prompt on a sample set before batch-processing large volumes maximizes first-pass success and avoids costly resubmissions."
+    },
+    {
+     "text": "Add thirty complete test files written in the new framework to the prompt, so every request in the batch sees every import pattern the team uses.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "This inflates all 2,000 requests and still goes into the full batch untested, so any remaining mistake repeats at full scale."
+    }
+   ],
+   "takeaway": "Refine a prompt on a sample set before batch-processing large volumes, so the first pass succeeds and you avoid costly resubmissions."
+  },
+  {
+   "id": "s5q17",
+   "domain": 4,
+   "ts": "4.6",
+   "type": "single",
+   "prompt": "Large pull requests get about 40 review findings each, and two senior engineers can verify only a few per PR. No finding may be dropped: each one is either posted directly or checked by an engineer first. The team has six months of past findings labeled accepted or dismissed by developers. What design decides which findings the engineers check?",
+   "options": [
+    {
+     "text": "In the same review turn, ask Claude to mark findings it feels unsure about, and send only those marked unsure to the engineers before posting the rest.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "This routes rather than hides, but the unsure flag comes from the same pass that made the findings and is never checked against outcomes, so nothing shows it tracks which findings get dismissed."
+    },
+    {
+     "text": "Add a verification pass that gives each finding a confidence score, set the cutoff from the labeled history, and route low scorers to the engineers.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Raw self-reported confidence is poorly calibrated, but a cutoff checked against six months of labeled outcomes makes it a usable signal. It only decides which findings a human checks first; none are hidden."
+    },
+    {
+     "text": "Tell the reviewer to post only findings that are very likely correct, and to leave out anything a senior engineer would need to double-check by hand.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "This drops uncertain findings instead of routing them, which breaks the no-drop requirement, and a vague instruction gives Claude no calibrated way to judge likelihood."
+    },
+    {
+     "text": "Train a separate model on the six months of labels to score every finding, and replace the review prompt's output with that model's ranked list.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Building and maintaining a trained scorer is heavy infrastructure when the labels can calibrate thresholds on Claude's own confidence output."
+    }
+   ],
+   "takeaway": "Self-reported confidence becomes a usable signal only after calibration against labeled outcomes, and then it should route findings to human review, not hide them."
+  },
+  {
+   "id": "s5q18",
+   "domain": 4,
+   "ts": "4.6",
+   "type": "multi",
+   "prompt": "An auto-fix job has one Claude Code session write a 16-file change, then review the whole change in a single pass in that same session before opening a PR. Human reviewers report two problems: subtle bugs the session introduced get approved, and review of the later files is shallow. Which changes fix these problems? Select TWO.",
+   "options": [
+    {
+     "text": "Run the review in a separate Claude instance that receives the diff and the task description but not the generating session's reasoning.",
+     "correct": true,
+     "trap": null,
+     "rationale": "An independent instance without the generator's reasoning context is more likely to question decisions the generator made."
+    },
+    {
+     "text": "Enable extended thinking for the review turn in the generating session, so it reasons more deeply about each of the 16 files before approving.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "The session still carries its own reasoning from generation, so it remains unlikely to question its own decisions."
+    },
+    {
+     "text": "Split the review into per-file passes for local issues, plus a separate integration pass that checks data flow between the changed files.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Per-file passes avoid attention dilution across 16 files, and the integration pass covers cross-file issues."
+    },
+    {
+     "text": "Add a checklist to the review prompt telling Claude to give all 16 files equal depth and to challenge its own earlier design choices.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "An instruction does not remove the generator's reasoning from the session, and it does not change how attention spreads across 16 files reviewed in one pass."
+    },
+    {
+     "text": "Give the reviewing session extra tools, such as git blame, a dependency graph server, and a linter, so it can check each file.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "More tools add decision complexity without fixing either cause: the reviewer still shares the generator's context and still covers 16 files in one pass."
+    }
+   ],
+   "takeaway": "Review generated code with an independent instance, and split large reviews into per-file passes plus an integration pass."
+  },
+  {
+   "id": "s5q19",
+   "domain": 4,
+   "ts": "4.6",
+   "type": "single",
+   "prompt": "After attention problems on large PRs, the team switched to one review pass per changed file. Local findings improved, but last week a PR renamed the currency field in orders/serializer.py and nothing flagged that billing/invoice.py still reads the old name. Each per-file pass saw only its own file. What should the team add?",
+   "options": [
+    {
+     "text": "Every changed file in the context of each per-file pass, so each pass can notice cross-file effects while it reviews its own file.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "This puts cross-file context back into every local pass, which brings back the attention dilution the split was meant to remove."
+    },
+    {
+     "text": "A line in each per-file prompt asking Claude to consider how changes in the file could affect other files in the same pull request.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "A pass that sees only one file cannot check another file it never received, no matter what the instruction says."
+    },
+    {
+     "text": "A second turn in each per-file session that asks Claude to recheck its own findings for anything it missed about other modules.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "Rechecking in the same session reuses the same single-file context and the same reasoning, so the cross-file bug stays invisible."
+    },
+    {
+     "text": "A separate integration pass that gets the changed files' interfaces and per-file results and checks the data flow between files.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Multi-pass review pairs per-file local passes with a dedicated integration pass for cross-file data flow, which is where this bug lives."
+    }
+   ],
+   "takeaway": "Per-file passes catch local issues; cross-file problems need their own integration pass over data flow between files."
+  }
+ ]
+}

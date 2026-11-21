@@ -1,0 +1,745 @@
+{
+ "id": "s3",
+ "title": "Multi-Agent Research System",
+ "setup": "You are building a multi-agent research system with the Claude Agent SDK. A coordinator agent delegates work through the Task tool to four subagents: web search, document analysis, synthesis and report generation. Each subagent has its own AgentDefinition with a system prompt and a restricted tool list. The system researches a topic and produces a comprehensive report with citations.",
+ "questions": [
+  {
+   "id": "s3q1",
+   "domain": 1,
+   "ts": "1.3",
+   "type": "single",
+   "prompt": "Reports often ignore the document analysis results, even though that subagent's output looks correct in the logs. The coordinator invokes the synthesis subagent with the prompt \"Synthesize the findings gathered so far into key themes.\" The synthesis agent's replies contain only general knowledge about the topic. What change fixes this?",
+   "options": [
+    {
+     "text": "Give the synthesis subagent the web search and document analysis tools so it can gather any findings it needs while it writes.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "This duplicates work other agents have already done and invites a synthesis agent to start doing research outside its role."
+    },
+    {
+     "text": "Update the synthesis AgentDefinition's system prompt to tell it to review the outputs of earlier subagents before naming themes.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "The subagent cannot review what it was never given. Subagents do not inherit the coordinator's history."
+    },
+    {
+     "text": "Have the synthesis agent reply NEED_FINDINGS when its input looks thin, and make the coordinator watch for that text and resend.",
+     "correct": false,
+     "trap": "text-signal-loops",
+     "rationale": "Parsing free text for a control signal is brittle, and it still relies on a later resend instead of passing the data the first time."
+    },
+    {
+     "text": "Pass the complete findings from the search and analysis subagents, with source metadata, directly in the synthesis Task prompt.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Subagents start with isolated context, so the coordinator must pass prior findings explicitly in the prompt it sends."
+    }
+   ],
+   "takeaway": "Subagents do not inherit the coordinator's context, so pass prior findings explicitly in the Task prompt."
+  },
+  {
+   "id": "s3q2",
+   "domain": 1,
+   "ts": "1.3",
+   "type": "single",
+   "prompt": "For a topic split into four independent subtopics, a research run takes about 11 minutes. Coordinator logs show one Task call per turn: it waits for the first web search subagent to finish before starting the second, and so on. The subtopics do not depend on one another. How should you cut latency?",
+   "options": [
+    {
+     "text": "Submit the four web search requests through the Message Batches API so they run together, then poll until all are done.",
+     "correct": false,
+     "trap": "batch-for-blocking",
+     "rationale": "Batches have no latency guarantee and do not support multi-turn tool calling, which a search subagent needs."
+    },
+    {
+     "text": "Have the coordinator emit all four Task calls in a single response so the subagents run in parallel.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Multiple Task calls in one coordinator response start the subagents at once, which is the intended way to parallelize independent work."
+    },
+    {
+     "text": "Give the coordinator the web search tools so it can run the four searches itself and skip spawning subagents.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "This loads search work and verbose results into the coordinator's own context and erodes the separation of roles."
+    },
+    {
+     "text": "Combine the four subtopics into one broad Task call so a single search subagent covers all of them in one run.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "One agent still works through the subtopics in sequence, and a broad prompt tends to cover some of them thinly."
+    }
+   ],
+   "takeaway": "Spawn independent subagents in parallel by emitting multiple Task calls in one coordinator response."
+  },
+  {
+   "id": "s3q3",
+   "domain": 5,
+   "ts": "5.3",
+   "type": "single",
+   "prompt": "Several reports state that \"no peer-reviewed research exists\" on subtopics where reviewers easily find papers. Logs show the document analysis subagent returns {\"status\": \"ok\", \"documents\": []} both when the repository search finds nothing and when the repository API times out. What should the subagent return instead?",
+   "options": [
+    {
+     "text": "On a timeout, return an error with the failure type, the query tried and any partial results, and keep ok for true empty results.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Separating access failures from valid empty results, with context about what was tried, lets the coordinator decide whether to retry or note a gap."
+    },
+    {
+     "text": "Keep returning an empty list in both cases, and have the coordinator retry any empty result three times before accepting it.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "This wastes retries on true empty results and still cannot tell the coordinator whether a source was down."
+    },
+    {
+     "text": "Raise an exception on any repository timeout so the coordinator stops the run rather than finishing with partial coverage.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "One failed source should not end the whole workflow when other results are usable and the gap can be reported."
+    },
+    {
+     "text": "Return a \"repository unavailable\" status on timeout, and tell the synthesis agent not to claim that research is absent.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "A bare status hides what was attempted and what partial results exist, and the prompt rule only masks one symptom downstream."
+    }
+   ],
+   "takeaway": "Distinguish access failures from valid empty results and propagate structured error context to the coordinator."
+  },
+  {
+   "id": "s3q4",
+   "domain": 5,
+   "ts": "5.6",
+   "type": "multi",
+   "prompt": "Reviewers flag two problems in recent reports. Many claims have no citation, although the search agent found a source for each one. And where two credible surveys give different adoption rates (34% and 41%), the report states one figure as fact and never mentions the other. Which two changes address these problems? Select TWO.",
+   "options": [
+    {
+     "text": "After drafting, have the report agent reread its own report and add a citation wherever it decides a claim lacks one.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "The source links were lost upstream. Rereading the draft cannot recover mappings the agent never received, and it will guess."
+    },
+    {
+     "text": "When figures conflict, have the synthesis agent keep the figure from the more recent survey and drop the older one as outdated.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Newer is not the same as correct, and the two surveys may measure different populations. Silently dropping one still hides the conflict."
+    },
+    {
+     "text": "Require subagents to return claim-source mappings with claim, excerpt, URL and publication date, and have synthesis keep them.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Structured claim-source mappings carried through synthesis keep attribution from being lost when findings are compressed."
+    },
+    {
+     "text": "Give the report agent the web search tools so it can find a source for any uncited claim after the draft has been written.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "This gives a writing agent research tools outside its role, and it may attach a different source than the one the claim came from."
+    },
+    {
+     "text": "When credible sources disagree, include both values with their sources and note the conflict rather than choosing one.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Annotating conflicts with attribution keeps the report honest and lets readers see that the figure is contested."
+    }
+   ],
+   "takeaway": "Preserve claim-source mappings through synthesis and annotate conflicting figures with their sources instead of picking one."
+  },
+  {
+   "id": "s3q5",
+   "domain": 2,
+   "ts": "2.1",
+   "type": "single",
+   "prompt": "The document analysis subagent has two tools: analyze_content (\"Analyzes content and returns insights\") and analyze_document (\"Analyzes a document and returns findings\"). analyze_document expects a PDF ID from the document store, and analyze_content expects raw web page text. About a third of calls send web text to analyze_document, which returns parse errors. What is the best first step?",
+   "options": [
+    {
+     "text": "Add five few-shot examples to the subagent's system prompt showing web text going to analyze_content and PDF IDs to analyze_document.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "Examples work around two near-identical descriptions instead of fixing them, and they add tokens to every call."
+    },
+    {
+     "text": "Set tool_choice to force analyze_content on every turn, since web text is most of the input, and handle PDFs in a separate request.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "Forcing one tool breaks the PDF path and moves routing out of the model into a second pipeline you now have to maintain."
+    },
+    {
+     "text": "Rename analyze_content to extract_web_results and rewrite both descriptions to state each tool's inputs, outputs and when to use it.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Tool descriptions drive selection. Clear names and descriptions that state inputs and boundaries remove the overlap at its source."
+    },
+    {
+     "text": "Add a PostToolUse hook that catches parse errors from analyze_document and resends the same input to analyze_content automatically.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "This patches each failure after it happens, adding a wasted call every time while the confusing descriptions stay in place."
+    }
+   ],
+   "takeaway": "Fix misrouting between similar tools by renaming them and writing descriptions that state inputs, outputs and boundaries."
+  },
+  {
+   "id": "s3q6",
+   "domain": 1,
+   "ts": "1.2",
+   "type": "single",
+   "prompt": "For broad topics, reports often have thin coverage in one or two areas. The coordinator currently runs search, analysis, synthesis and report exactly once, in a fixed sequence. You want the system to close coverage gaps before the report is written. Which design should you use?",
+   "options": [
+    {
+     "text": "Have the report agent add a Limitations section listing areas where the evidence was thin, so readers know which parts to treat with care.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Disclosing gaps is useful but does nothing to close them, which is what was asked."
+    },
+    {
+     "text": "Have the coordinator check the synthesis for gaps, send targeted queries back to search and analysis, and rerun synthesis until coverage is sufficient.",
+     "correct": true,
+     "trap": null,
+     "rationale": "An iterative refinement loop run by the coordinator finds the gaps and re-delegates with targeted queries before the report is produced."
+    },
+    {
+     "text": "Have the synthesis agent end its output with COVERAGE COMPLETE when satisfied, and loop the pipeline until the coordinator sees that phrase.",
+     "correct": false,
+     "trap": "text-signal-loops",
+     "rationale": "Loop control based on a phrase in free text is fragile, and nothing tells the search agents which gaps to target on the next pass."
+    },
+    {
+     "text": "Run the full search, analysis and synthesis sequence three times for every topic and merge the three syntheses before the report step.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Blind repetition triples cost and mostly repeats the same queries, so the thin areas are likely to stay thin."
+    }
+   ],
+   "takeaway": "Use a coordinator-driven refinement loop that evaluates synthesis for gaps and re-delegates targeted work."
+  },
+  {
+   "id": "s3q7",
+   "domain": 1,
+   "ts": "1.3",
+   "type": "single",
+   "prompt": "You split the system into a coordinator plus search and analysis subagents, each defined with an AgentDefinition. In testing, the coordinator never delegates. It answers every research question from its own knowledge, and the logs show no subagent invocations at all, even though its system prompt clearly tells it to delegate. What is the most likely cause?",
+   "options": [
+    {
+     "text": "The coordinator's allowedTools does not include \"Task\", so it has no way to spawn the subagents its prompt tells it to use.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Subagents are spawned through the Task tool. Without \"Task\" in allowedTools, delegation is impossible however the prompt is worded."
+    },
+    {
+     "text": "The delegation instruction is not emphatic enough, so it should be repeated at the end of the system prompt and marked as mandatory.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "The prompt already asks clearly. When there are zero invocations, check whether the agent has the tool before rewording the prompt."
+    },
+    {
+     "text": "The subagent definitions must be copied into the coordinator's system prompt, because subagents only exist once the coordinator has read about them.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "Subagents are configured as agent definitions, not described in prose. Pasting them into the prompt does not give the coordinator a way to call them."
+    },
+    {
+     "text": "The coordinator's model is too capable, so swap it for a smaller model that is less willing to answer research questions on its own.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Model choice is not why there are zero subagent calls. A smaller model still cannot call a tool it was never given."
+    }
+   ],
+   "takeaway": "A coordinator can spawn subagents only if \"Task\" is in its allowedTools. Prompt wording cannot make up for a missing tool."
+  },
+  {
+   "id": "s3q8",
+   "domain": 1,
+   "ts": "1.2",
+   "type": "multi",
+   "prompt": "Coordinator logs show two problems. A simple question such as \"When did the EU AI Act enter into force?\" still runs search, analysis, synthesis and report, taking six minutes. And the coordinator briefs subagents with long numbered procedures (\"Step 1: search Google Scholar. Step 2: open the top 3 results...\") that break when a source is unavailable. Which two changes address these? Select TWO.",
+   "options": [
+    {
+     "text": "Have the coordinator assess what each query needs and invoke only those subagents, rather than always running the full pipeline.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Selecting subagents dynamically by query complexity lets simple factual questions skip the stages they do not need."
+    },
+    {
+     "text": "Rewrite the subagent briefs to state the research goal and the quality bar for sources, and let each subagent decide how to meet it.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Goals and quality criteria let subagents adapt when a source fails, where rigid step lists simply break."
+    },
+    {
+     "text": "Extend each numbered procedure with fallback steps for every source that might be unavailable, such as trying Bing whenever Scholar fails.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "This patches the procedure for failures you have already seen, and it gets longer and more brittle with every new source."
+    },
+    {
+     "text": "Give every subagent the full set of search, analysis and synthesis tools, so each can work around a missing source on its own.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "Extra tools blur each subagent's role and make tool selection less reliable. They also do nothing about the full-pipeline problem."
+    },
+    {
+     "text": "Train a classifier on past queries to predict which pipeline stages each new question needs, and run it before the coordinator starts planning.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "The coordinator can already judge query complexity. A separate trained classifier is infrastructure the problem does not call for."
+    }
+   ],
+   "takeaway": "Coordinators should pick subagents per query and brief them with goals and quality criteria, not rigid step-by-step procedures."
+  },
+  {
+   "id": "s3q9",
+   "domain": 2,
+   "ts": "2.3",
+   "type": "single",
+   "prompt": "The synthesis subagent was given the same 16 tools as the coordinator, including web_search and fetch_url. Logs show it often runs new searches mid-synthesis, pulling in unvetted sources that skip the analysis step, and it takes noticeably longer to pick each tool. What is the best change?",
+   "options": [
+    {
+     "text": "Limit the synthesis subagent to the few tools its role needs, and send any request for new research back through the coordinator.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Scoping tools to the role stops cross-role misuse and makes tool selection faster and more reliable."
+    },
+    {
+     "text": "Keep all 16 tools, but add a line to its prompt saying it must never run searches and should only combine the findings it is given.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "The tools stay available, so this relies on the model ignoring them on every run. Removing the tools is the deterministic fix."
+    },
+    {
+     "text": "Add a dedicated source-vetting tool to the synthesis subagent, so it can check the quality of any new sources it finds for itself.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "This makes the subagent's toolset even larger and legitimizes the off-role searching instead of stopping it."
+    },
+    {
+     "text": "Insert a separate reviewer agent after synthesis that strips any citation not found in the analysis output before the report is generated.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A cleanup agent treats the symptom after the fact. Not giving synthesis the search tools prevents the problem."
+    }
+   ],
+   "takeaway": "Give each subagent only the tools its role needs. Extra tools get misused and make tool selection less reliable."
+  },
+  {
+   "id": "s3q10",
+   "domain": 1,
+   "ts": "1.2",
+   "type": "multi",
+   "prompt": "For the topic \"urban heat mitigation,\" the coordinator starts three web search subagents in parallel and briefs each one with the full topic. Logs show 62% of the returned sources are duplicates across the three agents, and none of them returned any municipal policy documents, which the report needs. Which two changes to the coordinator should you make? Select TWO.",
+   "options": [
+    {
+     "text": "Add a deduplication subagent that compares all returned sources after the searches finish and drops the repeats before analysis.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "This pays for the duplicate work and then adds another agent to discard it, and it does nothing about the missing policy documents."
+    },
+    {
+     "text": "Split the topic into distinct subtopics and give each search subagent one of them, instead of the full topic.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Partitioning the scope by subtopic stops the agents from covering the same ground, which is the source of the 62% overlap."
+    },
+    {
+     "text": "Tell each search subagent in its system prompt to avoid sources that the other two agents are likely to find for the same topic.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "Subagents run in isolated contexts and cannot see what the others find, so the instruction gives them nothing to act on."
+    },
+    {
+     "text": "Assign government and municipal policy sources to one dedicated search subagent, so that source type has a clear owner.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Assigning a source type to a specific agent closes the policy-document gap and further reduces overlap between agents."
+    },
+    {
+     "text": "Give each search subagent the document analysis tools too, so it can screen out repeated sources before it returns its results.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "Analysis tools are outside the search role, and an agent screening its own results still cannot see the other agents' results."
+    }
+   ],
+   "takeaway": "Have the coordinator partition research scope across subagents by distinct subtopics or source types so their work does not overlap."
+  },
+  {
+   "id": "s3q11",
+   "domain": 1,
+   "ts": "1.2",
+   "type": "single",
+   "prompt": "To cut latency, a developer let the synthesis subagent invoke the web search subagent directly whenever it wants another source. Since then, search failures reach synthesis in three different formats, the coordinator's logs no longer show which searches ran, and some reports cite sources the coordinator never saw. What should you do?",
+   "options": [
+    {
+     "text": "Keep the direct calls, and add a logging hook to the synthesis subagent that copies each search request into the coordinator's logs.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Copying logs fixes only visibility; errors are still handled inconsistently and unvetted sources still bypass the coordinator."
+    },
+    {
+     "text": "Give the synthesis subagent the full set of web search tools, so it no longer has to invoke a second subagent to get new sources.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "This gives synthesis tools outside its role and still lets new sources skip the coordinator, so the same problems remain."
+    },
+    {
+     "text": "Route every request for new searches through the coordinator, so it alone dispatches subagents, handles errors and tracks sources.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Hub-and-spoke routing through the coordinator restores observability, consistent error handling and control over which sources enter the report."
+    },
+    {
+     "text": "Add a shared message queue that every subagent can publish to and read from, so any subagent can request work from any other one.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A peer-to-peer queue spreads communication further and adds infrastructure, when routing through the existing coordinator solves the problem."
+    }
+   ],
+   "takeaway": "Route all subagent communication through the coordinator so errors, sources and activity stay visible and consistently handled."
+  },
+  {
+   "id": "s3q12",
+   "domain": 1,
+   "ts": "1.2",
+   "type": "single",
+   "prompt": "Midway through a session, the user tells the coordinator, \"Only use sources from 2021 onward, and focus on EU regulation.\" The coordinator acknowledges this. But the search and analysis subagents it spawns afterward keep returning 2017 to 2019 sources about US rules. Their Task prompts contain only the subtopic name. What is the cause, and what is the fix?",
+   "options": [
+    {
+     "text": "The AgentDefinition system prompts for search and analysis are missing the limits, so add 2021 onward and EU focus to both of them.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "These limits belong to one user request, so baking them into the permanent definitions would wrongly apply them to every future run."
+    },
+    {
+     "text": "The report subagent is the last line of defense, so have it remove any source dated before 2021 or outside the EU before it writes.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Filtering at the end discards most of the work and leaves thin coverage; the subagents still search without knowing the constraint."
+    },
+    {
+     "text": "The subagents lack shared memory, so give each one a store holding the coordinator's full conversation and have them read it first.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A shared memory store is new infrastructure; putting the relevant constraints in the Task prompt is the direct, reliable fix."
+    },
+    {
+     "text": "Subagents do not inherit the coordinator's conversation, so it must write the date and region limits into each Task prompt.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Subagent context is isolated; the user's constraint exists only in the coordinator's history until the coordinator passes it on explicitly."
+    }
+   ],
+   "takeaway": "Subagents start with only what the coordinator puts in their prompt, so pass user constraints to every subagent explicitly."
+  },
+  {
+   "id": "s3q13",
+   "domain": 1,
+   "ts": "1.3",
+   "type": "single",
+   "prompt": "The coordinator passes analysis results to the synthesis subagent as one block of prose that merges excerpts from 14 papers. In the final reports, about 1 in 5 citations names the wrong paper or page, even though the analysis agent sourced each excerpt correctly. What change best preserves attribution?",
+   "options": [
+    {
+     "text": "Have the synthesis subagent reread its draft against the prose block and fix any citation it now believes points to the wrong paper.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "The same agent rereading the same merged prose has no better information than it had the first time, so the errors persist."
+    },
+    {
+     "text": "Pass findings as structured records that keep each excerpt's content apart from its metadata: document name, URL and page number.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Keeping content and source metadata in separate fields lets synthesis carry each citation through intact instead of guessing it from prose."
+    },
+    {
+     "text": "Add a line to the synthesis system prompt telling it to take special care to attribute each excerpt to the correct paper and page.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "Once the metadata is blended into prose, no instruction can recover which excerpt came from which page."
+    },
+    {
+     "text": "Add ten worked examples to the synthesis prompt that show excerpts in a prose block being matched back to their correct source papers.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "The gap is the format of the handoff, not the agent's skill; examples add tokens without restoring the lost source mapping."
+    }
+   ],
+   "takeaway": "When passing context between agents, use structured data that separates content from source metadata so attribution survives."
+  },
+  {
+   "id": "s3q14",
+   "domain": 1,
+   "ts": "1.3",
+   "type": "single",
+   "prompt": "You are adding a fact-check subagent. It should verify draft claims against documents already in the document store, must never browse the web, and should be easy for the coordinator to choose for claim-checking work. Today the coordinator spawns a generic subagent and pastes fact-check instructions into each Task prompt. What is the best setup?",
+   "options": [
+    {
+     "text": "Create a fact-check AgentDefinition with a clear description, its own system prompt and only the document store tools.",
+     "correct": true,
+     "trap": null,
+     "rationale": "An AgentDefinition holds the description, system prompt and tool restrictions for a subagent type, so the role is defined once and enforced."
+    },
+    {
+     "text": "Keep the generic subagent with every tool, and add a line to each Task prompt saying it must never browse the web while it checks.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "A prompt line is guidance only; leaving web tools available means the \"never browse\" rule can still be broken."
+    },
+    {
+     "text": "Give the coordinator the document store tools and have it check each claim itself, so that no extra subagent type is needed.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "This loads the coordinator with tools outside its orchestration role and mixes verification work into its own context."
+    },
+    {
+     "text": "Run fact-checking as a separate service with its own model deployment, and call it over HTTP after each report is generated.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A new service is far more than needed; the Agent SDK already supports a dedicated subagent type for this role."
+    }
+   ],
+   "takeaway": "Define each subagent type with an AgentDefinition that sets its description, system prompt and restricted tool list."
+  },
+  {
+   "id": "s3q15",
+   "domain": 1,
+   "ts": "1.6",
+   "type": "single",
+   "prompt": "The system now handles two workloads. A weekly competitor brief always covers the same four aspects (pricing, product launches, hiring and funding) for each of 12 tracked companies. Ad hoc requests are open-ended, such as \"why did battery recycling startups struggle in 2024?\", where each finding shapes what to look at next. Which decomposition should you use?",
+   "options": [
+    {
+     "text": "Dynamic decomposition for both, with the coordinator inventing a fresh plan for every tracked company in the weekly brief each week.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Replanning a fixed, repeated structure every week adds cost and variation with no benefit, since the four aspects never change."
+    },
+    {
+     "text": "One general prompt for both workloads, with many example briefs and investigations attached so the model infers the structure.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "The real gap is choosing the right decomposition pattern; piling on examples does not give either workload the structure it needs."
+    },
+    {
+     "text": "A fixed prompt chain, one step per aspect, for the weekly brief, and dynamic decomposition that adapts to findings for ad hoc work.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Prompt chaining suits predictable multi-aspect work, while open-ended investigation needs subtasks generated from what each step discovers."
+    },
+    {
+     "text": "One long pass for each request, after which the same session reviews its own output for missed aspects and fills them in at the end.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "A single pass dilutes attention, and the same session checking its own work tends to miss the gaps it already overlooked."
+    }
+   ],
+   "takeaway": "Use prompt chaining for predictable multi-aspect tasks and dynamic, adaptive decomposition for open-ended investigations."
+  },
+  {
+   "id": "s3q16",
+   "domain": 2,
+   "ts": "2.1",
+   "type": "single",
+   "prompt": "The document analysis subagent has one tool, analyze_document, described as \"Analyzes a document.\" The coordinator uses it for three jobs: pulling statistics from a paper, summarizing a paper, and checking whether a paper supports a specific claim. Outputs come back in a different shape on each call, and claim checks often return a summary instead of a verdict with evidence. What should you do?",
+   "options": [
+    {
+     "text": "Keep analyze_document, and add eight examples to its description showing the output expected for statistics, summaries and checks.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "One tool still serves three different contracts; examples add length without giving any job a defined input and output."
+    },
+    {
+     "text": "Keep analyze_document, and tell the coordinator in its system prompt to say clearly in each call which of the three jobs it wants.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "Asking for clearer requests still relies on prompt wording, and the generic tool has no contract that guarantees the matching output shape."
+    },
+    {
+     "text": "Put a classifier in front of analyze_document that predicts which job each request needs and reshapes the output to match it.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A classifier adds a model and a failure point to work around a tool that should simply be split into clear purposes."
+    },
+    {
+     "text": "Split it into extract_data_points, summarize_content and verify_claim_against_source, each with a clear description and contract.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Purpose-specific tools with defined input and output contracts make each job explicit, so outputs are consistent and claim checks return verdicts."
+    }
+   ],
+   "takeaway": "Split a generic tool into purpose-specific tools with clear descriptions and defined input and output contracts."
+  },
+  {
+   "id": "s3q17",
+   "domain": 2,
+   "ts": "2.2",
+   "type": "single",
+   "prompt": "The web search subagent's fetch_page MCP tool returns isError: true with the text \"Fetch failed\" for every problem. Logs show the agent retrying paywalled pages that return 403 up to five times each, while it gives up on pages that timed out once and would likely load on a second try. What change should you make to fetch_page?",
+   "options": [
+    {
+     "text": "Keep the generic message, and cap the subagent at one retry per page so paywalled pages stop using up five attempts each.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "A blanket cap cuts wasted paywall retries but still treats timeouts and permission errors the same, so recoverable pages are still lost."
+    },
+    {
+     "text": "Return structured error metadata: an errorCategory such as transient or permission, an isRetryable flag and a description.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Categorized errors with a retryable flag let the agent retry timeouts and stop retrying permission failures such as paywalls."
+    },
+    {
+     "text": "Keep the generic message, and have the subagent's system prompt tell it to guess from each URL whether a page is likely paywalled.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "Guessing from URLs is unreliable; the tool knows the actual failure type and should report it rather than leave the agent to infer it."
+    },
+    {
+     "text": "Add an error-triage subagent that reads each failure message and decides whether the web search subagent should retry the page.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A triage agent adds a hop and still sees only \"Fetch failed,\" so it has no more information than the search agent had."
+    }
+   ],
+   "takeaway": "Return structured MCP errors with a category and retryable flag so the agent can choose the right recovery for each failure."
+  },
+  {
+   "id": "s3q18",
+   "domain": 2,
+   "ts": "2.3",
+   "type": "single",
+   "prompt": "The document analysis subagent has a generic fetch_url tool so it can load the document store links that the coordinator passes in. Logs show it also follows links inside those PDFs to blogs and news sites, and then analyzes that unvetted content as if it were one of the source documents. What is the best change?",
+   "options": [
+    {
+     "text": "Replace fetch_url with a load_document tool that accepts only validated document store URLs and rejects every other address.",
+     "correct": true,
+     "trap": null,
+     "rationale": "A constrained tool matched to the role makes off-scope fetching impossible, instead of hoping the agent avoids it."
+    },
+    {
+     "text": "Keep fetch_url, and add a rule to the subagent's system prompt that it may only open links pointing at the document store.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "A prompt rule leaves the generic capability in place, so the agent can still follow outside links some of the time."
+    },
+    {
+     "text": "Keep fetch_url, and add a classify_source tool so the subagent can judge whether each linked page is credible enough to analyze.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "This adds another tool and widens the role, while the generic fetch that causes the problem stays available."
+    },
+    {
+     "text": "Have the subagent review its own analysis at the end and delete any findings that came from pages outside the document store.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "The same agent that pulled in the outside pages is asked to catch them afterward, which is unreliable and wastes the work."
+    }
+   ],
+   "takeaway": "Replace generic tools with constrained alternatives that only accept the inputs a subagent's role requires."
+  },
+  {
+   "id": "s3q19",
+   "domain": 2,
+   "ts": "2.3",
+   "type": "single",
+   "prompt": "Before it uses enrichment tools such as lookup_citations and fetch_author_profile, the document analysis subagent must call extract_metadata on each new PDF. In 9% of runs it skips extract_metadata and enriches using a guessed title, which attaches citations to the wrong paper. How should you configure the request?",
+   "options": [
+    {
+     "text": "Force tool_choice to extract_metadata on every turn of the subagent, so that the metadata call can never be skipped at any point.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "This applies the forced choice at the wrong scope: forcing it on every turn means the enrichment tools can never be called, so the subagent cannot finish its job."
+    },
+    {
+     "text": "Add a rule in bold to the subagent's system prompt stating that extract_metadata must always be the very first tool it calls.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "Prompt wording lowers the skip rate but cannot guarantee the order, and the 9% of failures attach wrong citations."
+    },
+    {
+     "text": "Force the first call with tool_choice {\"type\": \"tool\", \"name\": \"extract_metadata\"}, then let later turns use enrichment tools.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Forced tool selection guarantees extract_metadata runs first, and the follow-up turns remain free to call the enrichment tools."
+    },
+    {
+     "text": "Add six examples to the system prompt showing extract_metadata called on a new PDF before lookup_citations or any other tool.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "Examples still leave the order to the model's choice; a forced tool_choice makes it deterministic."
+    }
+   ],
+   "takeaway": "Use forced tool_choice to guarantee a specific tool runs first, then handle the remaining steps in follow-up turns."
+  },
+  {
+   "id": "s3q20",
+   "domain": 5,
+   "ts": "5.3",
+   "type": "single",
+   "prompt": "The web search subagent reports every failed request to the coordinator immediately, including brief 503 errors that succeed on a second try. On busy days the coordinator re-plans dozens of times per run, and a run that used to take 8 minutes now takes 25. What should the web search subagent do instead?",
+   "options": [
+    {
+     "text": "Send any failed searches to the Message Batches API for a retry, and let the coordinator collect results once the batch completes.",
+     "correct": false,
+     "trap": "batch-for-blocking",
+     "rationale": "The run is waiting on these results, and batches can take up to 24 hours with no latency guarantee."
+    },
+    {
+     "text": "Add a monitoring agent that tracks search API health and pauses the entire research run whenever the error rate passes 5%.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "This adds an agent and still halts work over failures that a simple local retry would have resolved."
+    },
+    {
+     "text": "Return each failed search as an empty result marked successful, so the coordinator re-plans only when a search finds something.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "This silently hides real failures as \"no results,\" so the coordinator can never recover the coverage that was lost."
+    },
+    {
+     "text": "Retry transient failures itself, and escalate only errors it cannot resolve, with what it tried and any partial results.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Local recovery absorbs brief outages, and the coordinator only sees failures that need its decision, with the context to make it."
+    }
+   ],
+   "takeaway": "Subagents should recover locally from transient failures and propagate only unresolved errors, with attempts and partial results."
+  },
+  {
+   "id": "s3q21",
+   "domain": 5,
+   "ts": "5.3",
+   "type": "multi",
+   "prompt": "The patent database was offline for an entire run. The patent subagent raised an exception, and the coordinator's top-level handler aborted the whole run, discarding 40 minutes of finished search and analysis on the other five subtopics. You want runs to finish while staying honest about what is missing. Which two changes should you make? Select TWO.",
+   "options": [
+    {
+     "text": "Have the patent subagent return structured error context with the failure type, the query tried and any partial results.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Structured error context lets the coordinator keep the other subtopics and decide how to handle the missing one, instead of aborting."
+    },
+    {
+     "text": "Have the patent subagent return an empty result marked as successful, so the coordinator completes the run and ships the report.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "This finishes the run by hiding the failure, so the report reads as complete when patent coverage is actually missing."
+    },
+    {
+     "text": "Requeue the patent subtopic through the Message Batches API, and hold the finished report until that batch result comes back.",
+     "correct": false,
+     "trap": "batch-for-blocking",
+     "rationale": "The report is blocked on a batch with no latency guarantee, and the database may still be offline when it runs."
+    },
+    {
+     "text": "Have the report subagent reread its finished report and decide on its own whether any sections look thin enough to need a warning.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "The report agent was never told the source failed, so judging its own output it cannot reliably identify the real gap."
+    },
+    {
+     "text": "Have the synthesis output mark which findings are well supported and which topic areas have gaps due to an unavailable source.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Coverage annotations tell readers exactly where the report is thin because a source could not be reached."
+    }
+   ],
+   "takeaway": "Neither abort on a single failure nor hide it: propagate structured errors and annotate coverage gaps in the synthesis."
+  }
+ ]
+}

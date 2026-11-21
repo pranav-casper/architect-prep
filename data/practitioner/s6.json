@@ -1,0 +1,671 @@
+{
+ "id": "s6",
+ "title": "Structured Data Extraction",
+ "setup": "You are building a pipeline that extracts structured data from vendor invoices, receipts, and supplier contracts using the Claude API. Each document is sent with extraction tools whose input schemas define the output, and a validator checks every result before it is written to the finance system. The pipeline processes about 40,000 documents a month, mostly overnight, and a small team reviews flagged extractions by hand.",
+ "questions": [
+  {
+   "id": "s6q1",
+   "domain": 4,
+   "ts": "4.3",
+   "type": "single",
+   "prompt": "About 18% of invoices from small vendors have no purchase order number. The extract_invoice schema marks po_number as a required string. An audit shows that for these invoices the model returns values such as \"PO-0000\" or repeats the invoice number, which then fail matching in the finance system. What is the most effective fix?",
+   "options": [
+    {
+     "text": "Make po_number nullable in the schema and allow null when the invoice does not contain a purchase order number.",
+     "correct": true,
+     "trap": null,
+     "rationale": "A required field pressures the model to produce something. Making it nullable lets the model report absence honestly instead of fabricating a value."
+    },
+    {
+     "text": "Add a system prompt instruction stating that purchase order numbers must never be invented and must be copied exactly as printed.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "The schema still demands a string, so the instruction and the schema conflict. The model has no valid way to comply when the value is missing."
+    },
+    {
+     "text": "Validate po_number against the ERP and, on a mismatch, retry with the validation error appended so the model can correct it.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Retry with feedback works for format errors, not missing information. No retry can find a PO number that is not on the invoice."
+    },
+    {
+     "text": "Add eight few-shot examples of invoices without a purchase order that show the model writing NONE into the po_number field.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "This trains a sentinel string into a required field, which downstream systems must now special-case. The schema remains the actual problem."
+    }
+   ],
+   "takeaway": "Make schema fields nullable when source documents may lack the information, so the model is not pushed to fabricate values."
+  },
+  {
+   "id": "s6q2",
+   "domain": 4,
+   "ts": "4.4",
+   "type": "single",
+   "prompt": "Extraction uses tool_use with a strict schema, and no JSON syntax errors have occurred in months. However, the validator finds that in 6% of invoices the extracted line_items amounts do not add up to the extracted total. In most of these cases a line item was split across a page break. How should you improve accuracy for these invoices?",
+   "options": [
+    {
+     "text": "Set tool_choice to force the extract_invoice tool on every invoice request so the model is held to the exact schema whenever it emits line items.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "Schema compliance is already guaranteed. Forcing a specific tool controls which tool is called, not whether the numbers inside it are semantically right."
+    },
+    {
+     "text": "Add an instruction to the same request asking the model to double-check that its line items add up to the total before it calls the extraction tool.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "Asking the model to check itself in the same pass gives it no new information. It is the same reasoning that split the line item in the first place."
+    },
+    {
+     "text": "When validation fails, send a follow-up request with the original document, the failed extraction, and the specific sum mismatch, asking for a correction.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Retry with specific error feedback works well for structural mistakes like a split line item, because the information is present and the error tells the model where to look."
+    },
+    {
+     "text": "Retry each failed invoice up to three times with the original request unchanged, and keep the first extraction whose line items happen to sum to the total.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Blind retries give the model no hint about what went wrong, and accepting whichever run sums correctly can accept a different error that happens to balance."
+    }
+   ],
+   "takeaway": "Tool use removes syntax errors but not semantic ones, which are best fixed with retries that include the document, the failed output, and the specific validation error."
+  },
+  {
+   "id": "s6q3",
+   "domain": 4,
+   "ts": "4.3",
+   "type": "single",
+   "prompt": "Documents arrive unlabeled and may be invoices, receipts, or contracts. Each request includes three tools, extract_invoice, extract_receipt, and extract_contract, with tool_choice set to \"auto\". In about 4% of requests the model responds with a prose summary of the document instead of calling a tool, and the pipeline drops those documents. What is the best fix?",
+   "options": [
+    {
+     "text": "Force tool_choice to extract_invoice, since invoices are the most common document type, and send any result that does not fit to a second classification pass.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "Forcing one named tool removes the model's ability to pick the right schema for receipts and contracts, which creates a new class of errors."
+    },
+    {
+     "text": "Set tool_choice to \"any\" so the model must call one of the three extraction tools while it still chooses which schema fits the document.",
+     "correct": true,
+     "trap": null,
+     "rationale": "\"any\" guarantees a tool call and therefore structured output, while leaving the choice of schema to the model when the document type is unknown."
+    },
+    {
+     "text": "Add a sentence to the system prompt saying the model must call exactly one extraction tool for every document and must never answer in plain text.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "This lowers the rate of prose replies but cannot remove it. tool_choice enforces the behavior at the API level instead."
+    },
+    {
+     "text": "Scan each reply for phrases such as \"this document appears to be\" and, when one is found, resend the request with a reminder to use an extraction tool.",
+     "correct": false,
+     "trap": "text-signal-loops",
+     "rationale": "Parsing natural-language text to drive control flow is fragile, and new phrasings slip through. The API exposes a setting that prevents the text reply."
+    }
+   ],
+   "takeaway": "Use tool_choice \"any\" to guarantee a tool call when several extraction schemas exist and the document type is unknown."
+  },
+  {
+   "id": "s6q4",
+   "domain": 5,
+   "ts": "5.5",
+   "type": "multi",
+   "prompt": "After three months, the pipeline shows 97% field-level accuracy against human review. Finance wants to stop human review for every extraction the model marks as high confidence. Before you agree, which steps should you take? Select TWO.",
+   "options": [
+    {
+     "text": "Approve the change for all document types, since 97% clears the 95% target, and add a monthly reconciliation check to catch any rise in errors afterward.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "An aggregate figure can hide a document type or field that performs far worse. A reconciliation check catches errors only after they have reached the books."
+    },
+    {
+     "text": "Have the model output a confidence score for each field, and skip review for any document where every field scores 0.9 or above, the threshold finance proposed.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "Field-level scores are useful only once calibrated. A threshold picked by finance, never checked against a labeled validation set, treats raw self-reported confidence as accuracy."
+    },
+    {
+     "text": "Break accuracy down by document type and by field to confirm that no segment, such as handwritten receipts or contract dates, is far below the aggregate.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Aggregate accuracy can mask weak segments. Validating by document type and field is required before reducing review for any of them."
+    },
+    {
+     "text": "Train a separate model on three months of review outcomes to predict which extractions contain errors, and use its scores in place of human review.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "This adds a new model to maintain and still lacks the segment analysis and ongoing sampling that show whether automation is safe."
+    },
+    {
+     "text": "Keep reviewing a stratified random sample of high-confidence extractions so error rates stay measured and new error patterns are caught as they appear.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Stratified sampling of high-confidence output keeps measuring real error rates and surfaces novel failure patterns after review is reduced."
+    }
+   ],
+   "takeaway": "Before automating high-confidence extractions, validate accuracy per document type and field and keep stratified sampling in place."
+  },
+  {
+   "id": "s6q5",
+   "domain": 4,
+   "ts": "4.5",
+   "type": "single",
+   "prompt": "The monthly backlog of 40,000 documents is submitted through the Message Batches API. When results return, 1,150 requests have errored because their documents, mostly long supplier contracts, exceeded the context limit. The other results are valid. How should you handle this?",
+   "options": [
+    {
+     "text": "Resubmit the entire batch with max_tokens raised to the model's maximum so the long contracts can complete, and replace the earlier results with the new set.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "max_tokens caps output length and does not change the input context limit. Resubmitting 38,850 valid requests also wastes the cost the batch saved."
+    },
+    {
+     "text": "Move contract extraction to synchronous API calls for good, since the Batches API cannot accept documents of that size in any configuration you could submit.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Synchronous calls face the same context limit and give up the batch discount for latency-tolerant work. The failure is about document size, not the API."
+    },
+    {
+     "text": "Add a system prompt instruction telling the model to skip the less relevant parts of long contracts, then resubmit only the failed requests.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "The request fails before the model reads anything because the input is too large. No instruction can make the model skip input it never receives."
+    },
+    {
+     "text": "Use each failed request's custom_id to find its document, split those documents into chunks, and resubmit only them in a new batch.",
+     "correct": true,
+     "trap": null,
+     "rationale": "custom_id identifies exactly which documents failed, and chunking addresses why. Resubmitting only those keeps the valid results and the savings."
+    }
+   ],
+   "takeaway": "Handle batch failures by resubmitting only the failed custom_ids with a change that addresses the failure, such as chunking oversized documents."
+  },
+  {
+   "id": "s6q6",
+   "domain": 5,
+   "ts": "5.6",
+   "type": "single",
+   "prompt": "On some supplier contracts, the cover summary states one total contract value while the pricing schedule in an appendix adds up to a different amount. The schema has a single contract_value field. Reviewers see the model return the summary figure on some contracts and the schedule figure on others. What is the best change to the extraction design?",
+   "options": [
+    {
+     "text": "Extract both figures along with their source locations, add a conflict_detected boolean, and route contracts whose two figures disagree to human review.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Recording both values with provenance and flagging the conflict lets a person decide, rather than having the model silently pick one."
+    },
+    {
+     "text": "Add a rule to the prompt that the pricing schedule is authoritative, so the model reports only the appendix total and ignores the cover summary figure.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "This makes the output consistent but hides a real discrepancy. Sometimes the schedule is the figure that is wrong, and finance never learns there was a conflict."
+    },
+    {
+     "text": "Run the extraction three times at different temperatures and store whichever contract value appears in at least two of the three runs as the final figure.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Majority voting triples cost and still picks one value arbitrarily. Both numbers are genuinely in the document, so voting cannot resolve the conflict."
+    },
+    {
+     "text": "Ask the model in a second turn of the same conversation to reconsider its contract_value and confirm which figure it believes is correct before saving it.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "Reconsidering in the same conversation tends to confirm the first answer, and either way the model is choosing a value it has no basis to choose."
+    }
+   ],
+   "takeaway": "When a source contains conflicting values, capture both with their locations and flag the conflict instead of letting the model pick one."
+  },
+  {
+   "id": "s6q7",
+   "domain": 4,
+   "ts": "4.5",
+   "type": "single",
+   "prompt": "Contracts arrive throughout the day, and the business needs each one's extracted data within 30 hours of arrival. Extraction runs on the Message Batches API, which can take up to 24 hours to process a batch. Today the team submits one batch at midnight. How often must they submit batches to guarantee the 30-hour deadline?",
+   "options": [
+    {
+     "text": "At least every 6 hours, so no contract waits more than 6 hours to be submitted and the 24-hour processing window still fits inside 30 hours.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Worst case is wait time plus processing time. Six hours of waiting plus 24 hours of processing is exactly 30, so 6 hours is the longest safe interval."
+    },
+    {
+     "text": "Once a day at midnight is fine, since batches usually finish in a few hours and most contracts would comfortably make the 30-hour deadline.",
+     "correct": false,
+     "trap": "batch-for-blocking",
+     "rationale": "\"Usually\" is not a guarantee. A contract arriving just after midnight can wait 24 hours and then take up to 24 more to process."
+    },
+    {
+     "text": "Switch the whole pipeline to synchronous API calls as each contract arrives, because batches cannot be trusted to meet any kind of deadline.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Batches can meet a deadline that leaves room for the 24-hour window. Dropping them gives up the 50% savings for no reason."
+    },
+    {
+     "text": "Every 12 hours, since that halves the current wait and the processing time is usually far shorter than the 24-hour maximum.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Twelve hours of waiting plus 24 hours of processing is 36 hours in the worst case, which misses the 30-hour deadline."
+    }
+   ],
+   "takeaway": "With batches, the longest wait before submission plus the 24-hour processing window must fit inside the deadline."
+  },
+  {
+   "id": "s6q8",
+   "domain": 1,
+   "ts": "1.4",
+   "type": "single",
+   "prompt": "An extraction agent has three tools: extract_invoice, validate_extraction, and post_to_ledger. The system prompt says to always call validate_extraction and get a pass before posting. Audits find that about 2% of ledger entries were posted with no passing validation, usually on invoices the model judged \"simple.\" What is the most reliable fix?",
+   "options": [
+    {
+     "text": "Add a programmatic gate that blocks post_to_ledger for a document until validate_extraction has returned a pass for that same document ID.",
+     "correct": true,
+     "trap": null,
+     "rationale": "A programmatic prerequisite blocks the downstream call deterministically, which prompt instructions with a non-zero failure rate cannot do."
+    },
+    {
+     "text": "Move the validation rule to the top of the system prompt and state in bold that skipping validation is never allowed, even for simple invoices.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "The rule is already in the prompt and fails 2% of the time. Stronger wording is still probabilistic when the ordering must always hold."
+    },
+    {
+     "text": "Have the model write VALIDATION PASSED in its reply before calling post_to_ledger, and let the loop allow posting only after that phrase appears.",
+     "correct": false,
+     "trap": "text-signal-loops",
+     "rationale": "The model can write the phrase without a passing result, so this still depends on its compliance. The gate must check the actual validate_extraction result, not reply text."
+    },
+    {
+     "text": "Run a nightly job that finds ledger entries without a matching validation record and reverses them so they can be processed again the next day.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "This cleans up bad entries after they reach the finance system instead of preventing the unvalidated post in the first place."
+    }
+   ],
+   "takeaway": "When one step must always come before another, enforce it with a programmatic prerequisite, because prompt instructions have a non-zero failure rate."
+  },
+  {
+   "id": "s6q9",
+   "domain": 2,
+   "ts": "2.3",
+   "type": "single",
+   "prompt": "Each document request includes extract_metadata, which reads the vendor name, document type, and currency, plus enrichment tools lookup_vendor and convert_currency. With tool_choice set to \"auto\", the model sometimes calls lookup_vendor first with a guessed vendor name, before any metadata exists. How should you configure the requests so metadata is always extracted first?",
+   "options": [
+    {
+     "text": "Set tool_choice to \"any\" on the first request, so the model must call one of the tools instead of replying with text before metadata is ready.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "This patches a failure the pipeline does not have, text replies. \"any\" guarantees a tool call but lets the model choose which one, so it can still call lookup_vendor first."
+    },
+    {
+     "text": "Force tool_choice to extract_metadata on every turn of the conversation, so no other tool can be called before or after the metadata step.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "Forcing the tool on every turn means the enrichment tools can never run. The forced choice belongs on the first request only."
+    },
+    {
+     "text": "Force tool_choice to {\"type\": \"tool\", \"name\": \"extract_metadata\"} on the first request, then handle enrichment in follow-up turns.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Forced tool selection guarantees that a specific tool runs first. Later turns can then call the enrichment tools with the metadata in hand."
+    },
+    {
+     "text": "Add a system prompt rule that extract_metadata must always be the first tool called and that vendor names must never be guessed from text.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "A prompt rule makes the right order more likely but not certain. tool_choice can guarantee which tool is called first."
+    }
+   ],
+   "takeaway": "Use forced tool selection to make a specific tool run first, then let later turns handle the remaining steps."
+  },
+  {
+   "id": "s6q10",
+   "domain": 4,
+   "ts": "4.2",
+   "type": "single",
+   "prompt": "Supplier contracts put payment terms in different places: a dedicated Payment Terms section, a clause buried in General Provisions, or a row in a pricing table. Reviewers find payment_terms returned as null on 22% of contracts that do state terms, almost all with the clause and table layouts. The prompt already says to search the whole contract. What is the most effective fix?",
+   "options": [
+    {
+     "text": "Add forty complete contracts from every supplier to the prompt as examples, so the model has seen each supplier's layout before it extracts.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "Forty full contracts bloat every request. Two to four targeted examples covering the three layouts address the gap at a fraction of the cost."
+    },
+    {
+     "text": "Repeat the instruction to search the whole contract at the end of the prompt, adding that clauses and tables must be read as carefully as sections.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "The instruction already exists and is being missed on these layouts. Repeating prose does not show the model what the terms look like there."
+    },
+    {
+     "text": "Split each contract into sections and run a separate extraction agent on every section, then merge whatever payment terms each agent reports.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "This multiplies calls and adds merge logic, and a table row or clause can still be missed by the agent that sees it."
+    },
+    {
+     "text": "Add a few examples showing correct payment_terms extraction from each layout: a dedicated section, an embedded clause, and a pricing table row.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Few-shot examples of correct extraction from varied document structures directly address empty extraction of fields that are present."
+    }
+   ],
+   "takeaway": "When fields come back empty on some document layouts, add a few examples that show correct extraction from each layout."
+  },
+  {
+   "id": "s6q11",
+   "domain": 4,
+   "ts": "4.2",
+   "type": "single",
+   "prompt": "Receipts from farm suppliers list amounts informally, such as \"a dozen\", \"2 flats\", or \"half crate\". The schema has a nullable numeric quantity and a unit field, and a paragraph of instructions explains how to normalize them. Outputs are still inconsistent, and for lines like \"eggs, assorted\" that state no amount the model invents a quantity of 1. What should you add?",
+   "options": [
+    {
+     "text": "A unit conversion tool, a product catalog search tool, and a web search tool, so the extractor can look up typical quantities for each item.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "Extra tools add decision complexity and invite more guessing. Looking up a typical quantity is still not what the receipt says."
+    },
+    {
+     "text": "A few examples showing informal amounts such as \"2 flats\" turned into a quantity and unit, and a line with no stated amount extracted as null.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Few-shot examples reduce hallucination in extraction by showing how to handle informal measurements and when to leave a value empty."
+    },
+    {
+     "text": "A second paragraph restating the normalization rules in stronger terms, with a warning that the model must never guess a quantity.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "Detailed prose is already producing inconsistent results. More prose with a warning does not demonstrate the expected handling."
+    },
+    {
+     "text": "A separate normalization agent with its own prompt that post-processes every receipt line after extraction and rewrites the quantity.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A second agent adds cost and latency and cannot recover the true amount once the extractor has invented one."
+    }
+   ],
+   "takeaway": "Few-shot examples reduce extraction hallucination by showing how to handle informal or missing values that prose rules leave unclear."
+  },
+  {
+   "id": "s6q12",
+   "domain": 4,
+   "ts": "4.3",
+   "type": "single",
+   "prompt": "The extract_invoice tool schema defines invoice_date as a string, and tool use keeps every result schema-valid. Yet the finance system rejects 9% of records because dates arrive as \"4 March 2025\", \"Mar 4, 2025\", or \"2025-03-04\", copied as each vendor prints them. What is the best fix?",
+   "options": [
+    {
+     "text": "Add a regex step after extraction that rewrites the three date formats seen so far into YYYY-MM-DD before records reach finance.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "The regex covers only formats already seen and breaks on the next vendor's style. The extraction itself should produce one format."
+    },
+    {
+     "text": "Add twenty example invoices, one from each major vendor, so the model sees every date style it might meet in production.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "Many examples inflate each request without stating the target format. A plain normalization rule is the missing piece."
+    },
+    {
+     "text": "Add format normalization rules to the prompt, such as writing every date as YYYY-MM-DD, alongside the existing strict schema.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Strict schemas guarantee structure, not formatting. Normalization rules in the prompt handle inconsistent source formats."
+    },
+    {
+     "text": "Pass every record to a second Claude call whose only job is to normalize the date and amount fields before validation.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A second call doubles cost for a problem the first call can solve with one added rule."
+    }
+   ],
+   "takeaway": "Strict schemas guarantee structure, not format; add normalization rules to the prompt to handle inconsistent source formatting."
+  },
+  {
+   "id": "s6q13",
+   "domain": 4,
+   "ts": "4.3",
+   "type": "multi",
+   "prompt": "The extract_contract schema defines payment_method as an enum of ach, wire, check, and card. Some contracts specify letters of credit or net settlement, and others say only \"payment by a method agreed between the parties.\" Reviewers find these contracts forced into wire or check. Which schema changes should you make? Select TWO.",
+   "options": [
+    {
+     "text": "Add a dozen examples to the prompt showing how to map letters of credit and other unusual methods onto the four existing values.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "This teaches the model to force a fit more consistently. The data is still wrong because the categories cannot represent these methods."
+    },
+    {
+     "text": "Add an \"other\" value to payment_method, paired with a payment_method_detail string that records whatever method the contract names.",
+     "correct": true,
+     "trap": null,
+     "rationale": "The \"other\" plus detail pattern keeps the enum usable downstream while capturing methods outside the fixed list."
+    },
+    {
+     "text": "Add a separate extraction tool for each payment method, such as extract_ach_contract and extract_wire_contract, and let the model pick one.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "Multiplying tools increases decision complexity and still has no tool for a method outside the list."
+    },
+    {
+     "text": "Add an \"unclear\" value to payment_method for contracts whose wording does not settle which payment method the parties will use.",
+     "correct": true,
+     "trap": null,
+     "rationale": "An \"unclear\" enum value lets the model report ambiguity honestly instead of guessing wire or check."
+    },
+    {
+     "text": "Train a classifier that reads each contract after extraction and corrects payment_method whenever it disagrees with the model.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A trained corrector is extra infrastructure, and it would face the same four-value enum that cannot hold these cases."
+    }
+   ],
+   "takeaway": "Give enums an \"other\" value plus a detail field for new categories and an \"unclear\" value for ambiguous cases, so the model never has to force a fit."
+  },
+  {
+   "id": "s6q14",
+   "domain": 4,
+   "ts": "4.4",
+   "type": "single",
+   "prompt": "The validator requires vendor_tax_id, and failed extractions are retried with the specific validation error appended. Format errors usually clear on the first retry. But one group of invoices fails all three retries, and each of them says \"Tax ID as registered in master agreement\" instead of printing the number. What should you do with this group?",
+   "options": [
+    {
+     "text": "Raise the retry limit to six and make the appended error message more specific about where on the invoice the tax ID usually appears.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "The number is not on these invoices. More retries and better hints cannot extract information the document does not contain."
+    },
+    {
+     "text": "Add a turn in the same conversation asking the model to reread the invoice carefully and confirm that the tax ID is really missing from it.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "Confirming the absence does not produce the value, and the pipeline would still have no tax ID to write."
+    },
+    {
+     "text": "Stop retrying them, since the ID is not in the document, and route them to review or include the master agreement in the request.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Retries fail when the information exists only in an external document. Supplying that document or routing to review is what resolves it."
+    },
+    {
+     "text": "Give a second agent web search so it can look up each vendor's tax ID online and insert the first match into the failed extraction.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "This adds a new agent and an unreliable source for a value that the master agreement already holds."
+    }
+   ],
+   "takeaway": "Retries with error feedback fix format and structure errors, but they cannot recover information that is absent from the source document."
+  },
+  {
+   "id": "s6q15",
+   "domain": 4,
+   "ts": "4.4",
+   "type": "single",
+   "prompt": "When line items do not sum to the invoice total, the pipeline retries with the mismatch in the feedback. Reviewers found that on invoices where the vendor itself made an arithmetic error, retries \"succeed\" because the model changes line item amounts until they match the printed total. How should you redesign this validation?",
+   "options": [
+    {
+     "text": "Add a rule to the retry prompt that line item amounts must never be changed to force a match, and keep retrying until the totals agree.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "If the vendor's own figures disagree, the totals can never agree honestly, so this either loops or invites the same alteration."
+    },
+    {
+     "text": "Overwrite the extracted total with the sum of the line items whenever they differ, so every record passes validation on its first attempt.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "This hides a real discrepancy in the source invoice and writes a total the vendor never billed."
+    },
+    {
+     "text": "Ask the model in a follow-up turn of the same conversation whether it altered any amounts, and keep the result only if it says it did not.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "The same session is a weak judge of its own changes, and its answer does not reveal the vendor's arithmetic error."
+    },
+    {
+     "text": "Extract stated_total as printed and calculated_total as the sum of line items, and flag invoices where the two totals differ for review.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Extracting calculated and stated values side by side flags source discrepancies instead of letting retries force the data to agree."
+    }
+   ],
+   "takeaway": "Extract calculated and stated values side by side to flag source discrepancies, rather than letting retries force the data to agree."
+  },
+  {
+   "id": "s6q16",
+   "domain": 5,
+   "ts": "5.1",
+   "type": "single",
+   "prompt": "Long supplier contracts are processed in two steps: per-section requests extract obligations, then a consolidation request receives all section results concatenated in page order and builds the final record. Audits show the final record reliably keeps obligations from the first and last sections but often drops ones from the middle sections. What should you change?",
+   "options": [
+    {
+     "text": "Put a key-obligations summary at the start of the consolidation input and organize each section's results under explicit section headers.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Models attend reliably to the start and end of long inputs. A summary up front and clear headers reduce middle-section omissions."
+    },
+    {
+     "text": "Add examples of complete consolidated records from ten long contracts ahead of the section results in the consolidation request.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "Ten long examples make the input even longer and push the section results further into the middle, where they get lost."
+    },
+    {
+     "text": "Instruct the consolidation request to give every section equal attention and to double-check that no section's obligations were dropped.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "An instruction does not change how position affects attention. The input structure is what needs to change."
+    },
+    {
+     "text": "Run consolidation twice, once in page order and once in reverse order, and use a third request to merge the two final records.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Three requests per contract triple cost, and the merge step faces the same long-input problem."
+    }
+   ],
+   "takeaway": "Models can lose findings in the middle of long inputs, so lead with a key-findings summary and use explicit section headers."
+  },
+  {
+   "id": "s6q17",
+   "domain": 5,
+   "ts": "5.5",
+   "type": "single",
+   "prompt": "The model outputs a confidence score for each extracted field, and any field below 0.8 goes to human review. The team picked the 0.8 cutoff without data. A spot check finds that contract renewal dates scored 0.9 or higher are still wrong about 15% of the time, while invoice totals at 0.7 are almost always right. What should you do?",
+   "options": [
+    {
+     "text": "Set one cutoff per document type rather than per field, keeping the same 0.8 value for invoices, receipts, and contracts.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "The problem varies by field, and the cutoff is still a guess. Moving the threshold to a coarser level fixes neither issue."
+    },
+    {
+     "text": "Tell the model to score confidence more strictly on renewal dates and to go above 0.9 only when it is certain of the value.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "Instructions do not calibrate scores. You only know what a score means by comparing it with labeled outcomes."
+    },
+    {
+     "text": "Calibrate a threshold for each field against a labeled set of human-verified extractions, and route on those new cutoffs.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Field-level confidence scores need calibration against labeled validation data before they can route review attention well."
+    },
+    {
+     "text": "Have the model rescore each field in a second turn of the same conversation and route on the lower of the two scores.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "A second self-rating in the same context is still uncalibrated, so it adds cost without telling you what the scores mean."
+    }
+   ],
+   "takeaway": "Field-level confidence scores are useful for routing only after their thresholds are calibrated against labeled validation data."
+  },
+  {
+   "id": "s6q18",
+   "domain": 5,
+   "ts": "5.5",
+   "type": "multi",
+   "prompt": "Reviewers can check about 600 of the 40,000 monthly documents. Every extraction carries calibrated field-level confidence scores, and the validator records when a document's own figures contradict each other. You need to decide which documents get the limited review capacity first. Which criteria should drive routing? Select TWO.",
+   "options": [
+    {
+     "text": "Documents whose vendor cover emails use urgent or frustrated language about late payment.",
+     "correct": false,
+     "trap": "sentiment-escalation",
+     "rationale": "Tone says nothing about whether the extraction is wrong, so it wastes review capacity on documents that may be fine."
+    },
+    {
+     "text": "Extractions where one or more fields fall below their calibrated confidence threshold.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Low calibrated confidence is a direct signal that a field may be wrong, which is what review is for."
+    },
+    {
+     "text": "Documents that the extractor itself calls difficult when asked in a follow-up turn of the same conversation.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "A same-session self-assessment is uncalibrated and tends to defend its own output, so it is a weaker signal than the calibrated scores already available."
+    },
+    {
+     "text": "Documents whose source content is ambiguous or contradictory, such as conflicting totals.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Ambiguous or contradictory sources need human judgment, so they deserve priority for limited review capacity."
+    },
+    {
+     "text": "Documents where a second, independently built extraction pipeline disagrees with the first.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Building and running a second pipeline doubles cost when calibrated confidence and conflict flags already exist."
+    }
+   ],
+   "takeaway": "Spend limited review capacity on low calibrated confidence and ambiguous or contradictory sources, not on proxies like tone or the model's own say-so."
+  },
+  {
+   "id": "s6q19",
+   "domain": 5,
+   "ts": "5.6",
+   "type": "single",
+   "prompt": "A contract packet includes a 2022 master agreement with an hourly rate of $120 and a 2024 amendment with a rate of $135. The extractor reports both rates but no dates, so the validator marks every such packet as a conflict, and reviewers spend hours on them. Most turn out to be amendments that changed the rate. What should you change?",
+   "options": [
+    {
+     "text": "Exclude rate fields from conflict detection, so packets with more than one rate are no longer sent to reviewers at all.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "This also hides real rate conflicts. The missing piece is the date context that explains most differences."
+    },
+    {
+     "text": "Require each extracted rate to include its source document and effective date, so a later amendment is not misread as a rate conflict.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Capturing dates in structured output prevents temporal differences from being misinterpreted as contradictions."
+    },
+    {
+     "text": "Add a step that summarizes each packet into one paragraph before extraction, so only a single rate survives to reach the extractor.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "An extra summarization step drops source attribution and may keep the wrong rate, with no record of why."
+    },
+    {
+     "text": "Add fifteen example packets to the prompt showing which of two rates to report, covering every amendment style seen this year.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "Examples cannot tell the model which rate is current if the dates are not captured, and fifteen packets bloat every request."
+    }
+   ],
+   "takeaway": "Capture source and effective dates in structured output so changes over time are not mistaken for conflicting data."
+  }
+ ]
+}

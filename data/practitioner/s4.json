@@ -1,0 +1,739 @@
+{
+ "id": "s4",
+ "title": "Developer Productivity with Claude",
+ "setup": "Your platform team is building an internal developer assistant with the Claude Agent SDK. Engineers use it to explore unfamiliar repositories, understand a 15-year-old billing monolith, generate service boilerplate, and automate repetitive chores. The agent uses the built-in Read, Write, Edit, Bash, Grep and Glob tools and connects to several MCP servers, including an internal code-search server and the team's Jira instance. Sessions often run for hours across large codebases.",
+ "questions": [
+  {
+   "id": "s4q1",
+   "domain": 2,
+   "ts": "2.5",
+   "type": "single",
+   "prompt": "An engineer asks the agent to find every caller of the deprecated function formatLegacyDate before removing it. The function is also re-exported under two other names from utils/index.ts and shared/dates.ts. Session logs show the agent ran Glob on **/*.ts, then called Read on 212 files one after another until the context window filled, and it still missed callers that used the re-exported names. What is the most effective change to this exploration strategy?",
+   "options": [
+    {
+     "text": "Run /compact automatically after every 25 Read calls so the agent can work through all 212 files without filling the context window before it reaches the callers.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Compaction frees space but keeps the read-everything strategy. The agent still has no reason to look for the re-exported names, so the missed callers stay missed."
+    },
+    {
+     "text": "Build an MCP server that parses the repository into an AST call graph and exposes a find_callers tool, so the agent no longer opens files to locate usages.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A call-graph service could work eventually, but it is a large build for a problem the built-in tools already solve when used in the right order."
+    },
+    {
+     "text": "Grep for formatLegacyDate to find where it is defined and re-exported, collect each exported alias, then Grep for every alias and Read only the matching files.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Grep finds content such as function names, and tracing wrapper modules means first finding every exported name and then searching for each one. Reading only the matches keeps context small."
+    },
+    {
+     "text": "Add a system prompt rule limiting the agent to 30 Read calls per task and telling it to open files whose names contain date or format before any others.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "A prose cap is followed only probabilistically, and filename guessing has nothing to do with where callers live. Aliased callers in unrelated files would still be missed."
+    }
+   ],
+   "takeaway": "Build codebase understanding incrementally with Grep for content and Read for follow-up, and trace re-exports by searching for each exported name."
+  },
+  {
+   "id": "s4q2",
+   "domain": 2,
+   "ts": "2.4",
+   "type": "single",
+   "prompt": "The team added an MCP server that exposes search_symbols. It queries a precomputed index covering 31 repositories and returns definitions, references, and the owning service for any symbol. Its description reads \"Searches code.\" Traces show the agent uses the built-in Grep for 90% of symbol lookups, which misses references in the 30 repositories that are not checked out locally. What should you change first?",
+   "options": [
+    {
+     "text": "Rewrite the search_symbols description to say it covers all 31 indexed repositories, returns definitions and references with owning service, and suits symbol lookups better than Grep.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Tool descriptions are the main signal the model uses to choose tools. A two-word description gives it no reason to prefer the MCP tool over a familiar built-in one."
+    },
+    {
+     "text": "Remove Grep from the agent's allowedTools so that search_symbols becomes the only search option available whenever the agent needs to locate a function, class, or constant.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "Grep is still the right tool for error strings, config values, and local content. Taking it away fixes one routing problem by breaking many legitimate uses."
+    },
+    {
+     "text": "Add six few-shot examples to the system prompt showing symbol lookups routed to search_symbols, covering functions, classes, constants, and imports that cross service boundaries.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "Examples add tokens and patch selection for the cases shown, but the underlying gap is that the tool's description never explains what it can do."
+    },
+    {
+     "text": "Add a PreToolUse hook that inspects each Grep pattern and rewrites the call to search_symbols whenever the pattern looks like an identifier rather than free text.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Silently rewriting calls adds brittle pattern logic and hides the agent's real choices. Improving the description is the low-effort first step."
+    }
+   ],
+   "takeaway": "When an agent prefers a built-in tool over a more capable MCP tool, enrich the MCP tool's description before adding routing machinery."
+  },
+  {
+   "id": "s4q3",
+   "domain": 2,
+   "ts": "2.4",
+   "type": "multi",
+   "prompt": "Every engineer's agent sessions should use the community Jira MCP server, authenticated with that engineer's own API token. Separately, one staff engineer wants to trial an experimental MCP server she wrote for querying profiling data on her laptop. Which configuration choices are appropriate? Select TWO.",
+   "options": [
+    {
+     "text": "Write a custom Jira MCP server in-house so the team controls the tool names and descriptions, and register it in the project .mcp.json alongside the code-search server.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Jira is a standard integration with an existing community server. Custom servers are worth building for team-specific workflows, not to rename tools."
+    },
+    {
+     "text": "Add the community Jira server to the project .mcp.json committed to the repository and reference the credential as ${JIRA_API_TOKEN} so each engineer supplies their own.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Project-scoped .mcp.json shares the server through version control, and environment variable expansion keeps each engineer's token out of the repository."
+    },
+    {
+     "text": "Have each engineer add the Jira server to their own ~/.claude.json, and paste the exact configuration block into the project CLAUDE.md so new hires can copy it.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "User-level config is not shared through version control, so copies drift. CLAUDE.md holds instructions for Claude, not a distribution channel for server configuration."
+    },
+    {
+     "text": "Register the experimental profiling server in the project .mcp.json too, so its tools are discovered at connection time and any teammate can try them when needed.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "All configured servers' tools are loaded at once, so every teammate's agent gets extra tools it does not need, and they point at data that only exists on one laptop."
+    },
+    {
+     "text": "Have the staff engineer register her experimental profiling server in her user-level ~/.claude.json so it is available in her sessions without touching shared config.",
+     "correct": true,
+     "trap": null,
+     "rationale": "User-scoped ~/.claude.json is the place for personal or experimental servers. It affects only her sessions and keeps the team's tool set unchanged."
+    }
+   ],
+   "takeaway": "Shared servers go in project .mcp.json with environment variable expansion for secrets, and personal or experimental servers go in ~/.claude.json."
+  },
+  {
+   "id": "s4q4",
+   "domain": 1,
+   "ts": "1.7",
+   "type": "single",
+   "prompt": "Yesterday an engineer ran a long investigation of the legacy billing module in a session named billing-audit. The agent read 40 files and built a detailed map of the invoice flow. This morning a teammate merged a refactor that changed 3 of those 40 files. The engineer wants to continue the investigation today. What is the best approach?",
+   "options": [
+    {
+     "text": "Start a new session and have the agent re-read all 40 files from scratch, because any resumed context could hold tool results that no longer match the code on disk.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Fresh starts make sense when most prior results are stale. Here 37 of 40 files are unchanged, so full re-exploration throws away valid work."
+    },
+    {
+     "text": "Resume with --resume billing-audit and carry on as before, since the agent will see the new contents of the changed files whenever it next reads them during exploration.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "The agent will keep reasoning from its earlier reads of those three files and has no reason to re-open them. Stale results quietly shape its conclusions."
+    },
+    {
+     "text": "Use fork_session on billing-audit to create a branch for the refactored code, keeping the original branch available to compare against the pre-refactor behavior.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "Forking creates divergent branches from a shared baseline for exploring alternatives. It does not tell either branch that files changed underneath it."
+    },
+    {
+     "text": "Resume with --resume billing-audit and tell the agent which three files the refactor changed, so it re-reads and re-analyzes those files before it continues the investigation.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Most prior context is still valid, so resuming is efficient. Naming the changed files gives the agent a targeted re-analysis instead of a full re-exploration."
+    }
+   ],
+   "takeaway": "Resume when prior context is mostly valid and tell the agent exactly which files changed, and start fresh with a summary only when most results are stale."
+  },
+  {
+   "id": "s4q5",
+   "domain": 3,
+   "ts": "3.2",
+   "type": "single",
+   "prompt": "Engineers invoke a project skill, /map-service, that walks a service directory and prints an inventory of every module, class, and dependency. It often produces around 15,000 tokens of output. Engineers report that after running it, the rest of the session gets slower and the agent starts mixing inventory details into answers about their actual task. What change best addresses this?",
+   "options": [
+    {
+     "text": "Move the skill's instructions into the project CLAUDE.md so the mapping guidance loads at session start and engineers no longer need to invoke a separate skill to get it.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "CLAUDE.md loads in every session, so this adds context to every session and still produces the verbose inventory in the main conversation."
+    },
+    {
+     "text": "Add context: fork to the skill's SKILL.md frontmatter so the mapping runs in an isolated sub-agent context and only its final summary is returned to the main session.",
+     "correct": true,
+     "trap": null,
+     "rationale": "context: fork runs the skill in its own sub-agent context, so the 15,000 tokens of discovery output stay out of the main conversation."
+    },
+    {
+     "text": "Add allowed-tools: Read, Glob to the skill's frontmatter so the mapping cannot invoke Bash or Grep and therefore produces a smaller, more focused service inventory.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "allowed-tools restricts what the skill may do, which is useful for safety. It does not isolate output, and a Read-and-Glob inventory can be just as long."
+    },
+    {
+     "text": "Have engineers run /compact right after each /map-service invocation so the verbose inventory is condensed before they continue working on their actual task.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Compaction is a manual cleanup step after the damage is done, and it can blur details the engineer needs. Isolating the skill avoids the pollution in the first place."
+    }
+   ],
+   "takeaway": "Use context: fork for skills that produce verbose or exploratory output so it does not pollute the main conversation."
+  },
+  {
+   "id": "s4q6",
+   "domain": 5,
+   "ts": "5.4",
+   "type": "single",
+   "prompt": "Three hours into exploring a legacy order-management codebase, the agent answers a question about retry behavior by describing \"typical patterns in services like this\" instead of the RetryPolicyRegistry and BackoffScheduler classes it found and analyzed in the first hour. Its earlier answers were specific and correct. What is the most effective change for long exploration sessions like this one?",
+   "options": [
+    {
+     "text": "Add a system prompt instruction reminding the agent to name the specific classes it discovered earlier and to avoid generic descriptions when it answers codebase questions.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "An instruction cannot bring back details that have degraded in a long context. The agent would follow it by naming whatever it still recalls, which may be wrong."
+    },
+    {
+     "text": "Increase max_tokens on each request so the agent has room to include the specific class details it discovered earlier when it writes long answers late in the session.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "max_tokens limits the length of the response. It has no effect on how well the model retains findings from hours earlier in the context."
+    },
+    {
+     "text": "Have the agent record key findings in a scratchpad file as it explores, and have it read that file back before answering later questions.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Scratchpad files persist findings outside the degrading context, so later answers can draw on the exact classes discovered earlier."
+    },
+    {
+     "text": "Restart the session every 45 minutes and have the agent re-explore the codebase from the beginning, so its context is never older than the latest exploration pass.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "This discards hours of valid work and repeats the most expensive phase. Persisting findings is far cheaper than repeated full exploration."
+    }
+   ],
+   "takeaway": "Counter context degradation in long exploration sessions by persisting key findings to a scratchpad file the agent re-reads."
+  },
+  {
+   "id": "s4q7",
+   "domain": 1,
+   "ts": "1.6",
+   "type": "single",
+   "prompt": "An engineer asks the agent to \"add comprehensive tests to this legacy payments service.\" The service has 220 files, almost no tests, and dependencies nobody has documented. Which approach should the agent take?",
+   "options": [
+    {
+     "text": "Map the structure first, find the highest-impact areas such as money movement, then build a prioritized test plan it updates as it discovers dependencies.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Open-ended tasks call for adaptive decomposition: understand the structure, prioritize by impact, and revise the plan as new facts appear."
+    },
+    {
+     "text": "Read all 220 files into context before writing anything, so the agent has a complete picture of the service from the very start.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "Loading everything at once floods the context and dilutes attention. Exploration should start from entry points and go deeper as needed."
+    },
+    {
+     "text": "Write tests for whatever it reads first, then ask itself in the same session at the end whether the coverage looks comprehensive enough.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "Without a plan, coverage follows reading order rather than risk, and the same session is a poor judge of its own gaps."
+    },
+    {
+     "text": "Spin up one subagent per directory to write tests in parallel, each following the same fixed checklist, and merge all the results at the end.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A fixed fan-out ignores where the risk actually is and what each directory depends on. It is machinery in place of investigation."
+    }
+   ],
+   "takeaway": "For open-ended work, decompose adaptively: map the structure, prioritize by impact, and update the plan as you learn more."
+  },
+  {
+   "id": "s4q8",
+   "domain": 1,
+   "ts": "1.7",
+   "type": "single",
+   "prompt": "After a two-hour session analyzing a legacy reporting module, an engineer wants to compare two refactoring approaches: extracting a service layer, or splitting the module into smaller packages. Both attempts should start from the same analysis, and neither should influence the other. What should the engineer do?",
+   "options": [
+    {
+     "text": "Use fork_session to create two branches from the current analysis session, and try one refactoring approach in each branch.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Forking gives both attempts the same analysis baseline while keeping their changes and reasoning fully separate."
+    },
+    {
+     "text": "Try the first approach in the current session, then tell it to \"undo all of that\" and attempt the second approach in the same conversation.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "The second attempt inherits the first attempt's reasoning and edits, so the comparison is no longer independent."
+    },
+    {
+     "text": "Start two fresh sessions, and have each one repeat the full two-hour analysis of the module before it begins its refactoring attempt.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "This throws away the shared baseline and doubles the work, and the two analyses may not even match."
+    },
+    {
+     "text": "Ask the current session to describe both approaches in prose and choose the better one itself, without trying either refactor on the code.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "A prose comparison by the session that holds the context replaces real evidence with its own opinion."
+    }
+   ],
+   "takeaway": "Use fork_session to explore divergent approaches from one shared baseline without the branches influencing each other."
+  },
+  {
+   "id": "s4q9",
+   "domain": 2,
+   "ts": "2.4",
+   "type": "single",
+   "prompt": "Engineers ask the agent questions like \"which service owns the invoices table?\" The internal MCP server offers a run_sql tool, and the agent spends 6 to 10 calls per question listing schemas and tables before it can answer. What is the most effective improvement?",
+   "options": [
+    {
+     "text": "Expose the database schema catalog as an MCP resource, so the agent can see which tables and owners exist without making exploratory calls.",
+     "correct": true,
+     "trap": null,
+     "rationale": "MCP resources are made for content catalogs. The agent can read what exists up front instead of discovering it one query at a time."
+    },
+    {
+     "text": "Add a dozen example conversations to the system prompt showing the exact sequence of run_sql calls to make for common ownership questions.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "Examples make the exploration more consistent but do not remove it, and they cost tokens on every request."
+    },
+    {
+     "text": "Add separate list_schemas, list_tables, describe_table and find_owner tools, so each exploration step has its own dedicated tool.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "More tools reshape the same exploratory calls rather than removing them, and they make tool selection harder."
+    },
+    {
+     "text": "Cap the agent at three run_sql calls per question, so that it is forced to guess the owning service sooner instead of exploring first.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "A cap trades slow answers for wrong ones. The agent still lacks the catalog it needs to answer directly."
+    }
+   ],
+   "takeaway": "Use MCP resources to expose catalogs like schemas or docs, so agents can see what exists without exploratory tool calls."
+  },
+  {
+   "id": "s4q10",
+   "domain": 1,
+   "ts": "1.1",
+   "type": "single",
+   "prompt": "A chore-automation agent built on the Agent SDK renames a config key across a repository. Your loop code sends Claude only the system prompt, the original task and the most recent tool result on each iteration. Logs show the agent repeating Grep calls it already ran and re-editing files it already changed. What should you fix in the loop?",
+   "options": [
+    {
+     "text": "Set an iteration cap of 15, so the agent is stopped before it has a chance to repeat old Grep calls or re-edit changed files.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "An arbitrary cap hides the repetition by cutting runs short, and it can stop the agent before the rename is finished."
+    },
+    {
+     "text": "Append each tool_use turn and its tool_result to the message history, and send the full history on every iteration.",
+     "correct": true,
+     "trap": null,
+     "rationale": "The model can only reason about earlier actions it can see, so each tool call and result must stay in the conversation history."
+    },
+    {
+     "text": "Add a system prompt rule telling the agent to remember which files it has edited and never repeat a Grep it already ran.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "The agent cannot remember actions that are no longer in its context; the instruction asks for information the loop discards."
+    },
+    {
+     "text": "Keep sending the trimmed messages, and stop the loop as soon as the agent's reply text says it has finished the rename.",
+     "correct": false,
+     "trap": "text-signal-loops",
+     "rationale": "This leaves the missing history unfixed and ends the loop on wording instead of on stop_reason \"end_turn\"."
+    }
+   ],
+   "takeaway": "Append every tool result to the conversation history between iterations so the model can reason about what it has already done."
+  },
+  {
+   "id": "s4q11",
+   "domain": 1,
+   "ts": "1.6",
+   "type": "single",
+   "prompt": "An engineer asks the agent why about 0.3% of monthly invoices are charged twice. Before reading any code, the agent writes a fixed ten-step plan covering the invoice generator. Step 2 shows the duplicates come from a retry in the payment gateway client, which the plan never mentions, but the agent keeps working through steps 3 to 10 on the generator. How should the agent approach investigations like this?",
+   "options": [
+    {
+     "text": "Spawn one subagent per billing package to hunt for double-charge causes in parallel, then merge whatever each of them reports back.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A fixed fan-out spends effort on every package instead of following the lead that step 2 already found."
+    },
+    {
+     "text": "Add five example plans from past billing incidents to the prompt, so the upfront plan the agent writes covers more of the modules.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "A better fixed plan is still fixed; the gap is that the plan does not change when a finding points somewhere new."
+    },
+    {
+     "text": "Finish the fixed plan, then have the same session review its conclusions and list any modules that it thinks it may have missed.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "The session already ignored the gateway lead once, and reviewing its own conclusions is unlikely to reverse that."
+    },
+    {
+     "text": "Generate the next subtasks from each finding, and revise the plan when a step points somewhere new, such as the gateway client.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Open-ended investigations need an adaptive plan that creates subtasks from what each step discovers, so the gateway retry becomes the next focus."
+    }
+   ],
+   "takeaway": "For open-ended investigations, use an adaptive plan that generates subtasks from each finding instead of a fixed upfront sequence."
+  },
+  {
+   "id": "s4q12",
+   "domain": 1,
+   "ts": "1.7",
+   "type": "single",
+   "prompt": "An engineer is running two long investigations this week, one into the tax engine and one into the refund batch job. Each morning she opens a new session and spends 20 minutes re-explaining the previous day's findings, because she has no reliable way to get back to the right conversation. What should she do?",
+   "options": [
+    {
+     "text": "Give each investigation a named session, such as tax-engine and refund-batch, and continue each one with --resume and its name.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Named sessions with --resume return her to the exact prior conversation for each investigation, with its context intact."
+    },
+    {
+     "text": "Run both investigations in a single long session, so the findings from both stay together and there is one conversation to reopen.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "Mixing two investigations in one context makes each one noisier, and it still leaves her without a clean way to resume either."
+    },
+    {
+     "text": "Paste each day's findings into the project CLAUDE.md, so that every session in the repository loads both investigations at startup.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "Personal, in-progress notes do not belong in shared project config, where they load into every teammate's sessions."
+    },
+    {
+     "text": "Build an MCP server that stores each day's transcript and exposes a load_investigation tool to the next morning's new session.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "This rebuilds session resumption as custom infrastructure, when --resume with a session name already does it."
+    }
+   ],
+   "takeaway": "Name long-running sessions and use --resume with the session name to continue a specific investigation later."
+  },
+  {
+   "id": "s4q13",
+   "domain": 1,
+   "ts": "1.7",
+   "type": "single",
+   "prompt": "An engineer resumes yesterday's refund-batch session, in which the agent read 60 files. Six commits landed overnight, and she does not know which of those 60 files they touched, though most of the module is untouched. The prior analysis is still largely valid. What should she do before continuing the investigation?",
+   "options": [
+    {
+     "text": "Tell the resumed session that some code changed overnight, and let it decide for itself when a file seems worth re-reading.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "A vague warning does not say which earlier results are stale, so the agent keeps reasoning from old reads of the changed files."
+    },
+    {
+     "text": "Use git diff --name-only since yesterday, then tell the resumed session exactly which files changed so it re-reads only those.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Naming the specific changed files gives the resumed session a targeted re-analysis while keeping the context that is still valid."
+    },
+    {
+     "text": "Ask the resumed session which of its earlier findings it now believes are out of date, and have it re-check only those findings.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "The session can only judge its findings against its own old reads, so it has no way to know which files the commits changed."
+    },
+    {
+     "text": "Have the resumed session re-read all 60 files before it answers anything, so every earlier result is refreshed from disk first.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Most of the context is still valid, so full re-exploration wastes the work the session already did."
+    }
+   ],
+   "takeaway": "When resuming after code changes, tell the session exactly which files changed so it re-analyzes those instead of re-exploring everything."
+  },
+  {
+   "id": "s4q14",
+   "domain": 1,
+   "ts": "1.7",
+   "type": "multi",
+   "prompt": "An engineer has two saved sessions. auth-trace mapped the login flow yesterday, and git log shows no commits to the auth code since then. ledger-review analyzed the ledger service six weeks ago, and that service has since been rewritten. She wants to continue both investigations today. Which two actions are appropriate? Select TWO.",
+   "options": [
+    {
+     "text": "Start a fresh session for the auth work and have it re-read the whole login flow, so nothing from yesterday is reused.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "The prior context is still accurate, so discarding it repeats work for no gain."
+    },
+    {
+     "text": "Continue ledger-review with --resume, and trust the agent to notice the rewrite whenever it re-reads one of the files.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "The resumed context is full of outdated results, and the agent will reason from them before it happens to re-read anything."
+    },
+    {
+     "text": "Continue auth-trace with --resume auth-trace, because its earlier tool results still match the code on disk.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Nothing in the auth code has changed, so the prior context is valid and resuming saves re-exploration."
+    },
+    {
+     "text": "Resume ledger-review, then ask that session itself whether its six-week-old analysis still looks accurate before going on.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "The session judges its stale analysis against its own stale context, so it has no basis to notice what the rewrite changed."
+    },
+    {
+     "text": "Start a fresh session for the ledger work, seeded with a structured summary of what ledger-review concluded.",
+     "correct": true,
+     "trap": null,
+     "rationale": "The rewrite makes ledger-review's tool results stale, so a fresh session with a summary is more reliable than resuming."
+    }
+   ],
+   "takeaway": "Resume when prior context is still valid, and start fresh with an injected summary when prior tool results are stale."
+  },
+  {
+   "id": "s4q15",
+   "domain": 2,
+   "ts": "2.3",
+   "type": "single",
+   "prompt": "A ticket-triage chore makes one request per new Jira issue. The agent has three tools, label_issue, link_duplicate and request_info, and your code expects exactly one of them to be called. With tool_choice set to \"auto\", about 7% of responses are plain text, such as \"This looks like a duplicate of PAY-212,\" with no tool call. What should you change?",
+   "options": [
+    {
+     "text": "Keep \"auto\", and add a system prompt line saying the agent must always respond by calling exactly one of the three tools.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "With \"auto\" the model may still answer in text; a prompt line lowers the rate but does not guarantee a tool call."
+    },
+    {
+     "text": "Keep \"auto\", and add twelve example issues to the prompt, each one paired with the tool call the agent should make for it.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "Examples may shift behavior but leave text replies possible; the API setting that requires a tool call is the direct fix."
+    },
+    {
+     "text": "Force tool_choice to label_issue on every request, so that a tool call is always made whenever a new Jira issue arrives.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Forcing one tool removes the missing-call symptom but means duplicates are never linked and missing info is never requested."
+    },
+    {
+     "text": "Set tool_choice to \"any\", so the model must call one of the three tools but can still choose which one fits the issue.",
+     "correct": true,
+     "trap": null,
+     "rationale": "\"any\" guarantees a tool call instead of conversational text while leaving the choice among the three tools to the model."
+    }
+   ],
+   "takeaway": "Set tool_choice to \"any\" when the model must call a tool but should still choose which one."
+  },
+  {
+   "id": "s4q16",
+   "domain": 2,
+   "ts": "2.5",
+   "type": "multi",
+   "prompt": "An engineer asks the agent two things about the checkout repo: list every Playwright spec file, all named *.spec.ts and spread across 30 directories, and find where the error message \"Cart session expired\" is raised. Which two tool choices fit these requests? Select TWO.",
+   "options": [
+    {
+     "text": "Use Glob with the pattern **/*.spec.ts to list the spec files by name across every directory.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Glob matches file paths against name patterns, which is exactly what listing *.spec.ts files requires."
+    },
+    {
+     "text": "Connect a file-index MCP server and use its list_files and search tools for both of these requests.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "The built-in Glob and Grep already answer both requests, so another server only adds tools the agent does not need."
+    },
+    {
+     "text": "Read every file under src/ first, so the agent has all the contents in context before answering either.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Reading everything upfront wastes context; Glob and Grep answer both questions directly."
+    },
+    {
+     "text": "Use Grep for the string \"Cart session expired\" to find the files whose code raises that error.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Grep searches file contents, so it finds where the error message string appears in the code."
+    },
+    {
+     "text": "Use Glob with the pattern **/*expired* to find the file that raises the \"Cart session expired\" error.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "Glob matches file paths, not file contents, so it searches the wrong scope and finds the error only if a file happens to be named after it."
+    }
+   ],
+   "takeaway": "Use Glob to find files by name pattern and Grep to search file contents."
+  },
+  {
+   "id": "s4q17",
+   "domain": 2,
+   "ts": "2.5",
+   "type": "single",
+   "prompt": "The agent must change retry_limit: 3 to retry_limit: 5 in only the payments block of a legacy deploy.yaml. The file has six identical service blocks except for each block's name line, which sits 40 lines above the setting. Edit has failed four times because every anchor it tries matches more than one block. What should the agent do next?",
+   "options": [
+    {
+     "text": "Keep retrying Edit with different short anchors around retry_limit: 3 until one of them matches a single block.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "The blocks are identical around the setting, so more short anchors will keep matching several blocks and failing."
+    },
+    {
+     "text": "Read the full file, change the value in the payments block, and Write the complete updated file back.",
+     "correct": true,
+     "trap": null,
+     "rationale": "When Edit cannot find a short unique anchor, Read plus Write is the guide's reliable fallback; a 40-line anchor spanning the name line would be fragile and easy to mistype."
+    },
+    {
+     "text": "Split deploy.yaml into one file per service so every setting has a unique anchor, then edit the payments file.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Restructuring the deploy config is a large, risky change made only to work around a tool limitation."
+    },
+    {
+     "text": "Connect a YAML-editing MCP server that exposes a set_yaml_value tool, and use it to update the payments block.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "The built-in Read and Write tools already handle this; a new server adds tools the agent does not need."
+    }
+   ],
+   "takeaway": "When Edit fails because the anchor text is not unique, Read the whole file and Write the updated version."
+  },
+  {
+   "id": "s4q18",
+   "domain": 2,
+   "ts": "2.5",
+   "type": "single",
+   "prompt": "An engineer asks how a refund request travels through the billing monolith, which has about 1,800 Java files. The agent's first move is to Glob every .java file and Read them in alphabetical order, and its context fills up in the util package before it reaches any refund code. What approach should it take instead?",
+   "options": [
+    {
+     "text": "Connect an MCP server that indexes the monolith, and give the agent its eight query tools alongside the built-in ones.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "Eight more tools add selection complexity for a question that Grep and Read can answer directly."
+    },
+    {
+     "text": "Spawn one subagent per package to read all of its files and summarize them, then search the summaries for refund logic.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "This still reads all 1,800 files, just in parallel, when a targeted search finds the refund path directly."
+    },
+    {
+     "text": "Grep for refund entry points, such as the refund API route, Read those files, then follow their imports to trace the flow.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Starting from Grep hits and following imports builds understanding incrementally, reading only the files on the refund path."
+    },
+    {
+     "text": "Add a system prompt rule telling the agent to read controller files before utility files whenever it explores Java code.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "A reordering rule still reads files upfront in bulk instead of following the refund flow from its entry points."
+    }
+   ],
+   "takeaway": "Build codebase understanding incrementally: Grep for entry points, then Read and follow imports instead of reading everything."
+  },
+  {
+   "id": "s4q19",
+   "domain": 3,
+   "ts": "3.3",
+   "type": "single",
+   "prompt": "The root CLAUDE.md holds 300 lines of Terraform conventions. Terraform files live in infra/, in services/*/deploy/ and in tools/bootstrap/, but most engineers edit only application code, and every session loads those 300 lines anyway. You want the conventions loaded only when someone edits Terraform files. What should you do?",
+   "options": [
+    {
+     "text": "Move them to .claude/rules/terraform.md with YAML frontmatter paths: [\"**/*.tf\"], so it loads only for matching files.",
+     "correct": true,
+     "trap": null,
+     "rationale": "A path-scoped rule loads only when matching files are edited, wherever they live, which cuts irrelevant context for everyone else."
+    },
+    {
+     "text": "Move them into a CLAUDE.md file inside infra/, the directory that holds most of the Terraform code in the repository.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "A directory-level CLAUDE.md covers only infra/, so Terraform files in services/*/deploy/ and tools/bootstrap/ lose the conventions."
+    },
+    {
+     "text": "Move them into the ~/.claude/CLAUDE.md of each engineer who works on Terraform, so only those engineers load them.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "User-level files are not shared through version control, so the conventions would drift and new engineers would not get them."
+    },
+    {
+     "text": "Keep them in the root CLAUDE.md under a heading that tells Claude to apply the section only when editing Terraform.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "The 300 lines still load in every session; a heading relies on inference and saves no context."
+    }
+   ],
+   "takeaway": "Use .claude/rules/ files with glob paths frontmatter for conventions that apply to file types spread across directories."
+  },
+  {
+   "id": "s4q20",
+   "domain": 3,
+   "ts": "3.4",
+   "type": "single",
+   "prompt": "Two requests reach the assistant. One is a NullPointerException in InvoiceFormatter.format(), with a stack trace pointing to line 88 where a missing discount field is dereferenced. The other is deciding whether billing should publish events to a queue or expose a polling API, which need different infrastructure. How should each one be handled?",
+   "options": [
+    {
+     "text": "Plan mode for both, since any change to a 15-year-old monolith is risky and deserves a full design pass before edits.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Planning a one-line fix with a clear stack trace adds overhead without reducing any real risk."
+    },
+    {
+     "text": "Direct execution for both, then have the same session review the integration code it wrote and switch if it looks wrong.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "Building first risks costly rework, and the same session reviewing its own choice is unlikely to question it."
+    },
+    {
+     "text": "Direct execution for both, with several example queue and polling designs from other teams attached to the integration.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "Examples do not replace exploring this codebase and comparing the approaches before committing to one."
+    },
+    {
+     "text": "Direct execution for the InvoiceFormatter fix, and plan mode to explore and compare the two integration options first.",
+     "correct": true,
+     "trap": null,
+     "rationale": "A single-file bug with a clear stack trace is well scoped, while an architectural choice with infrastructure trade-offs needs planning first."
+    }
+   ],
+   "takeaway": "Use direct execution for well-scoped fixes and plan mode for architectural decisions with multiple valid approaches."
+  },
+  {
+   "id": "s4q21",
+   "domain": 3,
+   "ts": "3.5",
+   "type": "single",
+   "prompt": "An engineer asks the agent to add a caching layer in front of the legacy billing rate lookup, a domain neither of them knows well. Rates can change mid-month, and several downstream jobs read them. The engineer's whole prompt is \"add caching to getRate()\". What is the best way to start?",
+   "options": [
+    {
+     "text": "Paste ten example caching implementations from other services into the prompt, so the agent can follow the common pattern.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "Generic examples do not answer the questions specific to this domain, such as when cached rates become invalid."
+    },
+    {
+     "text": "Have the agent interview the engineer first, asking about rate changes, invalidation and failure modes, before writing code.",
+     "correct": true,
+     "trap": null,
+     "rationale": "The interview pattern surfaces design considerations, such as cache invalidation, that neither person has thought through yet."
+    },
+    {
+     "text": "Let the agent implement a cache straight away, then have the same session review its own code for any invalidation problems.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "The session would review code built on unexamined assumptions, so it is likely to miss the same considerations again."
+    },
+    {
+     "text": "Submit three caching design prompts through the Message Batches API overnight and pick the best result the next morning.",
+     "correct": false,
+     "trap": "batch-for-blocking",
+     "rationale": "The engineer is working on this now, and batch results can take up to 24 hours without addressing the missing requirements."
+    }
+   ],
+   "takeaway": "In unfamiliar domains, use the interview pattern so Claude surfaces design questions before it implements."
+  }
+ ]
+}

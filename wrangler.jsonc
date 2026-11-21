@@ -1,6 +1,7 @@
 {
-  // Static site served by Cloudflare Workers. Build first with `node tools/build.js`.
+  // Static site plus a small progress API, served by Cloudflare Workers. Build first with `node tools/build.js`.
   "name": "architect-prep",
+  "main": "src/worker.js",
   "compatibility_date": "2026-11-01",
   "workers_dev": true,
   "routes": [
@@ -8,6 +9,11 @@
     { "pattern": "www.ccafprep.xyz", "custom_domain": true }
   ],
   "assets": {
-    "directory": "./public"
-  }
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  // Saved progress, keyed by email. Wrangler creates the namespace on first deploy and fills in its id.
+  "kv_namespaces": [
+    { "binding": "PROGRESS" }
+  ]
 }

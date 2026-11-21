@@ -1,0 +1,671 @@
+{
+ "id": "s2",
+ "title": "Code Generation with Claude Code",
+ "setup": "Your engineering team uses Claude Code daily for code generation, refactoring, debugging and documentation. The repository is a TypeScript monorepo with a shared CLAUDE.md, several custom slash commands and a few project skills. Developers work on everything from one-line fixes to multi-week migrations. You own the team's Claude Code configuration and are asked to fix workflow problems as they come up.",
+ "questions": [
+  {
+   "id": "s2q1",
+   "domain": 3,
+   "ts": "3.1",
+   "type": "single",
+   "prompt": "A developer who joined last week says Claude never follows the team's API error-handling conventions for her, while it does for the tech lead. Running /memory on both machines shows that the tech lead's session loads ~/.claude/CLAUDE.md, which contains those conventions. The repository's CLAUDE.md does not mention them. What is the right fix?",
+   "options": [
+    {
+     "text": "Add an onboarding script that copies the tech lead's ~/.claude/CLAUDE.md into each new developer's home directory on day one.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Copies drift as soon as the lead edits his file, and the conventions still live outside version control where nobody reviews them."
+    },
+    {
+     "text": "Move the error-handling conventions into the project CLAUDE.md or a .claude/rules/ file, and commit that change to the repository.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Team standards belong in project-level configuration that is shared through version control, so every clone loads them."
+    },
+    {
+     "text": "Add the import line @~/.claude/CLAUDE.md to the repository's CLAUDE.md so that every developer's session picks up the conventions.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "The path resolves to each developer's own home directory, so the new hire imports her own empty file, not the lead's."
+    },
+    {
+     "text": "Create an /api-conventions command in .claude/commands/ that prints the conventions, and ask developers to run it when a session starts.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "Commands are on-demand. Conventions that must apply to all API code should load automatically, not depend on someone remembering to run a command."
+    }
+   ],
+   "takeaway": "User-level CLAUDE.md applies only to that user, so shared standards must live in project-level configuration."
+  },
+  {
+   "id": "s2q2",
+   "domain": 2,
+   "ts": "2.4",
+   "type": "single",
+   "prompt": "The team wants everyone to use the same Jira MCP server in Claude Code. A developer committed a working .mcp.json, but it contains his personal API token in plain text, and security has asked for it to be removed. Other developers still need the server to be available automatically when they clone the repository. What should you do?",
+   "options": [
+    {
+     "text": "Move the Jira server entry into each developer's ~/.claude.json and delete .mcp.json from the repository so tokens stay on their owners' machines.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "User scope is for personal or experimental servers. It removes the secret but also removes the shared, automatic setup the team asked for."
+    },
+    {
+     "text": "Add .mcp.json to .gitignore and post a template of the file on the team wiki so each developer can add a token and create the file locally.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "This hides the secret by taking the config out of version control, so every developer maintains a hand-made copy that drifts."
+    },
+    {
+     "text": "Build a small custom MCP server that wraps the Jira REST API and reads a shared service token from a secrets file bundled with the repository.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A standard integration like Jira is better served by an existing server, and bundling a shared token in the repo recreates the original leak."
+    },
+    {
+     "text": "Keep the server in the project .mcp.json, replace the literal token with ${JIRA_API_TOKEN}, and have each developer set that variable locally.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Environment variable expansion in project-scoped .mcp.json keeps the shared config in the repo while each developer supplies their own credential."
+    }
+   ],
+   "takeaway": "Share MCP servers through project .mcp.json and keep credentials out of it with environment variable expansion."
+  },
+  {
+   "id": "s2q3",
+   "domain": 3,
+   "ts": "3.4",
+   "type": "single",
+   "prompt": "You are replacing a homegrown date library with date-fns. A search shows 47 files import it, and some call sites depend on its unusual timezone handling. In an earlier attempt, output from dozens of Grep and Read calls filled the context window before any plan existed. How should you run the next attempt?",
+   "options": [
+    {
+     "text": "Use direct execution and migrate each file as soon as Grep finds it, so the discovery output never has to be held in context all at once.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "A 47-file migration with timezone edge cases needs a design decision up front. Migrating file by file risks rework when a tricky call site turns up late."
+    },
+    {
+     "text": "Paste the list of 47 files and their call sites into CLAUDE.md so the analysis is loaded at startup and Claude does not need to search at all.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "This puts one-off migration data into a file loaded in every session for every developer, and it goes stale as soon as the code changes."
+    },
+    {
+     "text": "Work in plan mode, hand call-site discovery to the Explore subagent so only a summary comes back, then execute the approved plan directly.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Plan mode suits a multi-file change with design choices, and the Explore subagent keeps verbose discovery out of the main context."
+    },
+    {
+     "text": "Open 47 separate sessions in direct execution, one per importing file, so that each session has a small context and cannot run out of room.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Independent sessions cannot make a consistent decision about the timezone behavior, and coordinating 47 of them costs far more than one planned run."
+    }
+   ],
+   "takeaway": "Plan large multi-file changes in plan mode and isolate verbose discovery in the Explore subagent."
+  },
+  {
+   "id": "s2q4",
+   "domain": 3,
+   "ts": "3.2",
+   "type": "multi",
+   "prompt": "The team's /dependency-audit skill in .claude/skills/ walks the whole monorepo and prints thousands of lines. After running it, developers notice Claude losing track of decisions made earlier in the same session. Security also wants the skill limited so that it cannot modify files or run shell commands while it runs. Which two changes meet these needs? Select TWO.",
+   "options": [
+    {
+     "text": "Add context: fork to the frontmatter so that the skill runs in an isolated sub-agent context and only its final result comes back.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Forking keeps the verbose audit output out of the main conversation, which is what was crowding out earlier decisions."
+    },
+    {
+     "text": "Add argument-hint to the frontmatter so developers are prompted for a package name and the audit only scans the part they name.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Narrower scans produce less output, but a full audit still floods the session. The output needs isolation, not just trimming."
+    },
+    {
+     "text": "Add a line to the skill body telling Claude it must not edit files or run commands during the audit and should only read and report.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "An instruction in the body is guidance the model can drift from. Security asked for a limit on what the skill can do."
+    },
+    {
+     "text": "Set allowed-tools in the frontmatter to Read, Grep and Glob so the skill has no access to Edit, Write or Bash while the audit runs.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Restricting allowed-tools limits the skill to read-only inspection while it runs, which meets the security requirement in configuration."
+    },
+    {
+     "text": "Move the skill to ~/.claude/skills/ so that its output stays in a personal scope and no longer affects the shared project conversation.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "Skill location controls who can use it, not where its output goes. It would also take the skill away from the rest of the team."
+    }
+   ],
+   "takeaway": "Use context: fork to isolate verbose skill output and allowed-tools to restrict what a skill can do."
+  },
+  {
+   "id": "s2q5",
+   "domain": 3,
+   "ts": "3.5",
+   "type": "single",
+   "prompt": "You ask Claude Code to write normalizePhone(), which converts legacy CRM phone strings to E.164. You have rewritten the prose requirements three times, and each version still handles extensions like \"x204\" and numbers without a country code differently. What should you do next?",
+   "options": [
+    {
+     "text": "Give Claude three concrete input and output pairs, including one with an extension and one with no country code.",
+     "correct": true,
+     "trap": null,
+     "rationale": "When prose is read inconsistently, two or three concrete examples pin down the transformation far better than more description."
+    },
+    {
+     "text": "Write a fuller prose specification that lists every formatting rule in priority order, with a paragraph on each edge case.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Three prose rewrites have already failed. A longer version of the same approach is still open to interpretation."
+    },
+    {
+     "text": "Ask Claude to reread its implementation in the same session, list any inconsistencies it finds, and fix them before you look.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "The same session shares the reasoning that produced the inconsistency and has no reference for what correct output is."
+    },
+    {
+     "text": "Collect 25 examples covering every phone format in the CRM and paste all of them into the request with the prose requirements.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "A few targeted examples are enough to show the ambiguous cases. Dozens add noise and invite matching instead of generalizing."
+    }
+   ],
+   "takeaway": "When prose requirements are interpreted inconsistently, give two or three concrete input and output examples."
+  },
+  {
+   "id": "s2q6",
+   "domain": 5,
+   "ts": "5.4",
+   "type": "single",
+   "prompt": "A developer spends an afternoon in one Claude Code session mapping how payments flow through a legacy service. Early on, Claude correctly named LedgerWriter and RetryQueue as the key classes. Three hours later its answers contradict those findings and refer to \"a typical repository pattern\" instead of the classes it found. What should the developer do going forward?",
+   "options": [
+    {
+     "text": "Add a CLAUDE.md rule stating that answers must cite specific class names from this codebase and must not describe generic patterns.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "The model is not choosing to be generic. It has lost the earlier findings in a long context, and a rule cannot bring them back."
+    },
+    {
+     "text": "Ask Claude to check each new answer against everything it found earlier in the conversation and flag any contradictions first.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "The earlier findings are what has degraded, so checking against them in the same context is unreliable."
+    },
+    {
+     "text": "Have Claude record key findings in a scratchpad file as it goes, and refer later questions to that file.",
+     "correct": true,
+     "trap": null,
+     "rationale": "A scratchpad file persists findings outside the degrading context, so later answers can rely on what was actually discovered."
+    },
+    {
+     "text": "Restart the investigation in plan mode, which keeps exploration read-only and so stops findings being lost as the session grows.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "Plan mode controls whether Claude makes changes. It does not protect findings from context degradation in a long session."
+    }
+   ],
+   "takeaway": "Counter context degradation in long exploration sessions by persisting key findings in a scratchpad file."
+  },
+  {
+   "id": "s2q7",
+   "domain": 3,
+   "ts": "3.1",
+   "type": "single",
+   "prompt": "Your monorepo has 9 packages. The team's coding standards live in four files under docs/standards/: typescript.md, python.md, accessibility.md and data-privacy.md. Each package needs a different subset, chosen by that package's maintainers, and the standards change often. How should each package get the right standards?",
+   "options": [
+    {
+     "text": "In each package's CLAUDE.md, use @import to reference only the standards files its maintainers choose, so every package always pulls the current text.",
+     "correct": true,
+     "trap": null,
+     "rationale": "@import keeps one source of truth for each standard while letting each package include exactly the subset it needs."
+    },
+    {
+     "text": "Paste the full text of all four standards files into the root CLAUDE.md, so every package always has every standard loaded whatever it does.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "Every package then loads standards that do not apply to it, which wastes context and blurs which rules matter where."
+    },
+    {
+     "text": "Copy the relevant sections of each standards file into every package's CLAUDE.md, and ask maintainers to re-copy them whenever standards change.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Copies drift out of date as soon as a standard changes. It works on day one but fails the \"changes often\" requirement."
+    },
+    {
+     "text": "Ask each developer to add the standards they need to ~/.claude/CLAUDE.md, since they know best which packages they personally work on.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "User-level files are not shared through version control, so teammates get inconsistent standards and maintainers lose control."
+    }
+   ],
+   "takeaway": "Use @import in package-level CLAUDE.md files to pull in just the shared standards each package needs from one source of truth."
+  },
+  {
+   "id": "s2q8",
+   "domain": 3,
+   "ts": "3.1",
+   "type": "single",
+   "prompt": "The root CLAUDE.md has grown to 1,900 lines covering testing, API conventions, deployment and code style. Three developers edited it last week and hit merge conflicts, and people struggle to find which section governs a topic. Everything in it applies across the whole repository. What is the most maintainable way to organize it?",
+   "options": [
+    {
+     "text": "Move each section into the ~/.claude/CLAUDE.md of the developer who owns that topic, so edits stop colliding.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "User-level files are not shared through version control, so every other developer would lose those standards."
+    },
+    {
+     "text": "Split it into focused topic files in .claude/rules/, such as testing.md, api-conventions.md and deployment.md.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Topic-specific rule files replace a monolithic CLAUDE.md, so each topic is easy to find and edits rarely collide."
+    },
+    {
+     "text": "Turn each section into a subagent with its own system prompt that the main session consults on that topic.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "These are always-on project standards. Subagents add orchestration for a problem that is only file organization."
+    },
+    {
+     "text": "Keep one file, add a table of contents at the top, and ask developers to announce edits in a team channel first.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "A table of contents helps navigation but the file stays monolithic, so conflicts and sprawl continue."
+    }
+   ],
+   "takeaway": "Split a large CLAUDE.md into focused topic files in .claude/rules/ instead of keeping one monolithic file."
+  },
+  {
+   "id": "s2q9",
+   "domain": 3,
+   "ts": "3.1",
+   "type": "single",
+   "prompt": "Two developers working in packages/billing get different behavior: for one, Claude always wraps money values in the team's Decimal helper, and for the other it uses plain numbers. Both have pulled the latest main branch and run the same Claude Code version. Before changing any configuration, what should you do first?",
+   "options": [
+    {
+     "text": "Add a line in capitals to the root CLAUDE.md stating that all money values must always use the Decimal helper.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "This changes configuration before you know the cause, and louder wording does not explain why the two sessions differ."
+    },
+    {
+     "text": "Ask Claude in each session to explain why it picked its approach, and use the answers to find the missing rule.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "The model's own account of its choice is not a reliable view of which files were loaded. /memory shows that directly."
+    },
+    {
+     "text": "Write a script that gathers every CLAUDE.md and rules file from both machines and diffs them line by line.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A custom script rebuilds what /memory already reports, and it may miss which files a session actually loaded."
+    },
+    {
+     "text": "Run /memory in both sessions to see which memory files each one has loaded, then compare the two lists.",
+     "correct": true,
+     "trap": null,
+     "rationale": "/memory shows exactly which CLAUDE.md files are loaded, which is the direct way to diagnose inconsistent behavior across sessions."
+    }
+   ],
+   "takeaway": "Use /memory to see which memory files a session has loaded when behavior differs between developers or sessions."
+  },
+  {
+   "id": "s2q10",
+   "domain": 3,
+   "ts": "3.2",
+   "type": "single",
+   "prompt": "The team's /scaffold-endpoint skill needs a route name and an HTTP method. When developers invoke it with no arguments, Claude guesses, and last week it generated a POST /items handler nobody asked for. You want developers prompted for the missing values without otherwise changing how the skill works. What should you add?",
+   "options": [
+    {
+     "text": "Add argument-hint to the SKILL.md frontmatter describing the route name and method the skill expects.",
+     "correct": true,
+     "trap": null,
+     "rationale": "argument-hint exists to prompt developers for required parameters when they invoke a skill without arguments."
+    },
+    {
+     "text": "Add a line to the skill body telling Claude to refuse to scaffold anything when the route or method is missing.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "This relies on the model following an instruction and gives developers no hint about what to pass in the first place."
+    },
+    {
+     "text": "Wrap the skill in a shell script that parses arguments and will not start Claude Code until both are supplied.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A wrapper script adds tooling outside Claude Code for a need the skill frontmatter already covers."
+    },
+    {
+     "text": "Add few-shot examples of correct invocations to the skill body so developers copy the pattern next time.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "Examples in the skill body guide Claude, not the developer typing the command, so nothing prompts for the values."
+    }
+   ],
+   "takeaway": "Use argument-hint in skill frontmatter to prompt developers for required parameters when they invoke the skill without arguments."
+  },
+  {
+   "id": "s2q11",
+   "domain": 3,
+   "ts": "3.2",
+   "type": "single",
+   "prompt": "Your project CLAUDE.md contains a 350-line release procedure: bump versions, update the changelog, tag and publish. Releases happen about twice a month, but the procedure loads in every session, and developers say Claude sometimes starts editing the changelog during unrelated work. What should you do with the procedure?",
+   "options": [
+    {
+     "text": "Move the procedure into the release manager's ~/.claude/CLAUDE.md, since one person cuts each release.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "User-level files are not shared, so anyone else who cuts a release loses the procedure, and it would still load in every one of that person's sessions."
+    },
+    {
+     "text": "Keep it in CLAUDE.md under a heading that tells Claude to apply the procedure only when cutting a release.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "The text still loads every session and still depends on the model applying it only at the right time, which is the current failure."
+    },
+    {
+     "text": "Move it into a project skill in .claude/skills/ that developers invoke when they cut a release.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Skills are for on-demand, task-specific workflows. CLAUDE.md is for standards that should always be loaded."
+    },
+    {
+     "text": "Create a dedicated release subagent with its own tool set and the full procedure in its system prompt.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "A project skill already gives on-demand loading. A custom subagent adds configuration with no extra benefit here."
+    }
+   ],
+   "takeaway": "Put task-specific workflows in skills that load on demand, and keep CLAUDE.md for universal standards that should always apply."
+  },
+  {
+   "id": "s2q12",
+   "domain": 3,
+   "ts": "3.3",
+   "type": "multi",
+   "prompt": "Terraform conventions take up 220 lines of the root CLAUDE.md. Terraform files live in infra/ and also in a deploy/ folder inside each of 12 services. Frontend developers never touch Terraform but still load these conventions in every session. Which two changes make the conventions load only when they are needed, from one copy that is easy to maintain? Select TWO.",
+   "options": [
+    {
+     "text": "Create .claude/rules/terraform.md with paths: [\"**/*.tf\"] in its YAML frontmatter, and put the conventions there.",
+     "correct": true,
+     "trap": null,
+     "rationale": "A path-scoped rule loads only when Claude edits matching files, wherever they sit in the repository."
+    },
+    {
+     "text": "Copy the conventions into a CLAUDE.md in infra/ and in each service's deploy/ folder, 13 files in total.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "Directory-level files work per folder, so 13 copies must be kept in sync. A glob rule covers every location from one file."
+    },
+    {
+     "text": "Create a Terraform subagent with the conventions in its system prompt and send all .tf edits to it.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "This adds a new agent and routing for something a single path-scoped rule file handles."
+    },
+    {
+     "text": "Remove the Terraform section from the root CLAUDE.md, because anything left there loads in every session.",
+     "correct": true,
+     "trap": null,
+     "rationale": "The root CLAUDE.md always loads. The conventions only stop costing tokens elsewhere once they are moved out of it."
+    },
+    {
+     "text": "Keep the section in the root CLAUDE.md with a note telling Claude to ignore it unless it is editing .tf files.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "The text still loads and uses tokens in every session, and the note only asks the model to disregard it."
+    }
+   ],
+   "takeaway": "Move file-type conventions out of the root CLAUDE.md into .claude/rules/ files with glob paths, so they load only for matching files."
+  },
+  {
+   "id": "s2q13",
+   "domain": 3,
+   "ts": "3.3",
+   "type": "single",
+   "prompt": "Each of 9 packages has its own CLAUDE.md that repeats the team's SQL migration conventions, because migration files live in packages/*/migrations/. Last month someone updated the rule on reversible migrations in 4 of the copies, and new migrations in the other 5 packages still break it. What should you change?",
+   "options": [
+    {
+     "text": "Add a CI check that diffs the nine package CLAUDE.md files and fails the build when their migration sections differ.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "The check catches drift after it happens but keeps nine copies to maintain. One shared rule removes the drift."
+    },
+    {
+     "text": "Move the migration conventions into the root CLAUDE.md so they load for every task in every package of the repo.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "This fixes drift but loads migration rules into every session, including work that never touches a migration."
+    },
+    {
+     "text": "Add a dozen example migrations with correct down steps to each package's CLAUDE.md so Claude copies the pattern.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "More content in nine files makes drift worse. The problem is duplicated conventions, not a lack of examples."
+    },
+    {
+     "text": "Replace the nine copies with one .claude/rules/ file whose paths frontmatter matches **/migrations/*.sql.",
+     "correct": true,
+     "trap": null,
+     "rationale": "A single glob-scoped rule applies to migration files in every package and loads only when they are edited."
+    }
+   ],
+   "takeaway": "For conventions that apply to files spread across many directories, use one path-scoped rule instead of copies in subdirectory CLAUDE.md files."
+  },
+  {
+   "id": "s2q14",
+   "domain": 3,
+   "ts": "3.3",
+   "type": "single",
+   "prompt": "Your React conventions live in .claude/rules/react.md with paths: [\"packages/web/**/*\"], because packages/web was the first package to use React. Since then, packages/admin and packages/checkout have added .tsx components, and Claude does not apply the conventions when editing them. The conventions are the same for every .tsx file in the repository. What should you change?",
+   "options": [
+    {
+     "text": "Add a line to the root CLAUDE.md telling Claude to follow react.md whenever it edits a .tsx file in any package.",
+     "correct": false,
+     "trap": "system-prompt-enforcement",
+     "rationale": "This asks the model to load the rule by instruction when the paths glob can load it automatically for every matching file."
+    },
+    {
+     "text": "Change the paths glob to a file-type pattern such as **/*.tsx, so the rule applies to components in every package.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Glob patterns can apply conventions to files by type regardless of directory, so one pattern covers every current and future package."
+    },
+    {
+     "text": "Put a CLAUDE.md with the React conventions in packages/admin and packages/checkout, next to the existing rule.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "Directory-level files create copies to keep in sync, and the next package with .tsx files needs yet another copy."
+    },
+    {
+     "text": "Add packages/admin/**/* and packages/checkout/**/* to the paths list, next to the existing packages/web entry.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "This patches the two packages seen so far. The rule is about a file type, so the next package with components fails the same way."
+    }
+   ],
+   "takeaway": "When a convention applies to a file type across the codebase, scope the rule with a file-type glob such as **/*.tsx instead of a directory path."
+  },
+  {
+   "id": "s2q15",
+   "domain": 3,
+   "ts": "3.4",
+   "type": "single",
+   "prompt": "A production error report includes a stack trace pointing to line 88 of src/utils/formatInvoice.ts, where a null discount value causes a TypeError. The fix is a null check in that one function, and an existing test file covers it. A teammate proposes that every Claude Code task must start in plan mode. How should you handle this fix?",
+   "options": [
+    {
+     "text": "Enter plan mode to explore the invoicing module and design the change, since planning first prevents rework.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Plan mode is for large or ambiguous changes. A one-line fix with a clear stack trace gains nothing from a design phase."
+    },
+    {
+     "text": "Have the Explore subagent map every caller of formatInvoice, then decide in plan mode if a null check is safe.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Broad discovery and planning are overhead for a well-scoped single-function fix that existing tests already cover."
+    },
+    {
+     "text": "Use direct execution: ask Claude to add the null check in formatInvoice.ts and run the existing tests.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Direct execution fits simple, well-scoped changes such as a single-file bug fix with a clear stack trace."
+    },
+    {
+     "text": "Connect the error tracker's MCP server so Claude can look into the report further before it edits anything.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "The stack trace already identifies the line and the cause. More tools add steps without changing the fix."
+    }
+   ],
+   "takeaway": "Use direct execution for simple, well-scoped changes such as a single-file fix with a clear stack trace; reserve plan mode for complex work."
+  },
+  {
+   "id": "s2q16",
+   "domain": 3,
+   "ts": "3.4",
+   "type": "single",
+   "prompt": "You need to add inventory sync between the orders service and a supplier. One option uses the supplier's webhooks and needs a new public endpoint and a queue. The other polls the supplier's API every minute from an existing cron worker. Either way the change touches the orders, inventory and notifications packages. How should you start?",
+   "options": [
+    {
+     "text": "Enter plan mode to explore the three packages and compare both approaches, including what infrastructure each needs.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Choosing between approaches with different infrastructure across several packages is the kind of decision plan mode is designed for."
+    },
+    {
+     "text": "Start in direct execution with polling, since it reuses the cron worker, and switch to plan mode if problems appear.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "The architectural choice is known up front. Waiting for problems to appear risks costly rework across three packages."
+    },
+    {
+     "text": "Ask Claude to build both approaches on separate branches in direct execution and keep whichever passes tests first.",
+     "correct": false,
+     "trap": "over-engineering",
+     "rationale": "Building both doubles the work, and passing tests first says little about which design fits the infrastructure better."
+    },
+    {
+     "text": "Build the webhook version in direct execution, then ask the same session whether polling would have been better.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "This commits to one approach before exploring, and the session that built it is poorly placed to judge the alternative it skipped."
+    }
+   ],
+   "takeaway": "Use plan mode when a task involves choosing between approaches with different infrastructure needs across several packages."
+  },
+  {
+   "id": "s2q17",
+   "domain": 3,
+   "ts": "3.5",
+   "type": "single",
+   "prompt": "You ask Claude Code to add a caching layer in front of a pricing service. Nobody on the team has built caching for this service before, and your request covers only the cache library and a 5-minute TTL. You suspect there are design questions you have not thought of. What should you do before implementation starts?",
+   "options": [
+    {
+     "text": "Have Claude implement it now, then review its own code in the same session for any design issues it missed.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "Reviewing after the fact in the same session tends to accept its own choices, and design gaps are cheaper to find before code exists."
+    },
+    {
+     "text": "Connect MCP servers for the cache and the pricing database so Claude can inspect live data while it codes.",
+     "correct": false,
+     "trap": "tool-bloat",
+     "rationale": "More tools give Claude data but do not surface the design decisions you have not considered."
+    },
+    {
+     "text": "Paste 20 caching implementations from other projects into the request so Claude can infer the right design.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "A pile of other designs does not reveal this service's requirements, such as when prices change."
+    },
+    {
+     "text": "Ask Claude to interview you first about issues such as cache invalidation and failure modes, then build.",
+     "correct": true,
+     "trap": null,
+     "rationale": "The interview pattern has Claude ask questions that surface considerations you may not have anticipated in an unfamiliar domain."
+    }
+   ],
+   "takeaway": "In an unfamiliar domain, use the interview pattern so Claude asks about design considerations before it implements."
+  },
+  {
+   "id": "s2q18",
+   "domain": 3,
+   "ts": "3.5",
+   "type": "single",
+   "prompt": "Claude generated a retry wrapper for a payment API that sits behind a 30-second gateway timeout. Review finds three problems: the per-attempt timeout is 12 seconds, it retries 4 times, and the backoff doubles from 2 seconds. Each value can only be set correctly with the other two in mind, so the total stays under 30 seconds. How should you ask for the fix?",
+   "options": [
+    {
+     "text": "Fix them one at a time, starting with the timeout, and raise the next problem only after Claude finishes the last.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Sequential fixes suit independent issues. Here each change shifts the total time, so fixing one at a time keeps breaking the budget."
+    },
+    {
+     "text": "Describe all three problems in one message along with the 30-second budget, so the values are chosen together.",
+     "correct": true,
+     "trap": null,
+     "rationale": "When fixes interact, a single detailed message lets Claude solve them together against the shared constraint."
+    },
+    {
+     "text": "Ask the same session to review its wrapper again and keep adjusting it until it decides the wrapper is correct.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "The session that wrote the wrapper is poorly placed to judge it, and the 30-second constraint is never stated."
+    },
+    {
+     "text": "Paste a dozen retry wrappers from other services into the request so Claude can copy the values they use.",
+     "correct": false,
+     "trap": "few-shot-overload",
+     "rationale": "Other services have different budgets. The missing piece is the constraint linking the three values."
+    }
+   ],
+   "takeaway": "Give all interacting problems in one detailed message; fix problems one at a time only when they are independent."
+  },
+  {
+   "id": "s2q19",
+   "domain": 5,
+   "ts": "5.4",
+   "type": "multi",
+   "prompt": "A developer is mapping the order-fulfillment flow of a large legacy service in one long Claude Code session. Grep and Read output from discovery has filled most of the context, and Claude's newer answers have started to drift. The next phase has three separate questions: which modules write to the shipments table, where retries happen, and which tests cover cancellations. Which two steps should the developer take? Select TWO.",
+   "options": [
+    {
+     "text": "Paste the full Grep and Read output into CLAUDE.md so that it loads at the start of every new session.",
+     "correct": false,
+     "trap": "wrong-scope",
+     "rationale": "Raw discovery output in CLAUDE.md fills every future session with the same verbose content that caused the drift."
+    },
+    {
+     "text": "Ask Claude to rerun all the discovery searches in the same session so the early findings are fresh again.",
+     "correct": false,
+     "trap": "symptom-fix",
+     "rationale": "Repeating discovery adds even more verbose output to a context that is already nearly full."
+    },
+    {
+     "text": "Run /compact to shrink the verbose discovery output in context while keeping the key findings so far.",
+     "correct": true,
+     "trap": null,
+     "rationale": "/compact reduces context usage when a long exploration session has filled up with verbose discovery output."
+    },
+    {
+     "text": "Ask the same session to check each new answer against its earlier ones and flag any contradictions.",
+     "correct": false,
+     "trap": "self-review",
+     "rationale": "The session is already degrading, so asking it to police its own answers relies on the context that is failing."
+    },
+    {
+     "text": "Spawn a subagent for each of the three questions, so its exploration stays isolated and only a summary returns.",
+     "correct": true,
+     "trap": null,
+     "rationale": "Subagents keep verbose exploration out of the main context, which keeps coordinating the high-level picture."
+    }
+   ],
+   "takeaway": "In long explorations, use /compact to cut verbose output and delegate specific questions to subagents that return summaries."
+  }
+ ]
+}

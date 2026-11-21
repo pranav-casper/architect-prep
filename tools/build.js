@@ -3,7 +3,8 @@ const fs = require('fs'), path = require('path');
 const root = path.join(__dirname, '..');
 const read = f => JSON.parse(fs.readFileSync(path.join(root, 'data', f), 'utf8'));
 const learner = read('learner.json');
-const scenarios = ['practitioner-a.json', 'practitioner-b.json'].filter(f => fs.existsSync(path.join(root, 'data', f))).flatMap(f => read(f).scenarios);
+// One file per scenario in data/practitioner/, in id order (s1.json, s2.json, ...).
+const scenarios = fs.readdirSync(path.join(root, 'data', 'practitioner')).filter(f => f.endsWith('.json')).sort().map(f => read(path.join('practitioner', f)));
 const data = JSON.stringify({ learner, practitioner: { scenarios } }).replace(/</g, '\\u003c');
 const html = fs.readFileSync(path.join(root, 'src', 'index.html'), 'utf8').replace('/*__DATA__*/null', data);
 fs.mkdirSync(path.join(root, 'dist'), { recursive: true });

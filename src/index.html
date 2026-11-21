@@ -112,6 +112,24 @@ main { max-width: 720px; margin: 0 auto; }
 .path.prac { background: var(--t4); }
 .path.prac .path-icon { background: var(--surface); color: var(--ink); }
 .path .go { margin-top: 2px; font-weight: 500; font-size: .9rem; color: var(--ink); }
+.path .last { font-size: .8rem; color: var(--muted); }
+.fresh { justify-content: center; gap: 20px; margin-top: -10px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.choice[disabled] { opacity: .45; cursor: not-allowed; }
+/* Learner levels */
+.level { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.level.locked { opacity: .6; }
+.level-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.level-head h2 { font-size: 1.25rem; }
+.lessons { display: flex; flex-direction: column; gap: 6px; }
+.lesson { display: flex; align-items: center; gap: 10px; text-align: left; border: 1.5px solid var(--line); background: var(--bg); border-radius: 12px; padding: 10px 12px; cursor: pointer; font-size: .92rem; }
+.lesson .sw { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.lesson .ln { flex: 1; }
+.lesson .lc { color: var(--muted); font-size: .8rem; }
+.lesson.done .lc { color: var(--good); }
+.lesson.next { border-color: var(--ink); }
+.lesson[disabled] { cursor: not-allowed; }
+.insight.unlock { background: var(--t4); }
 
 /* Intro walkthrough */
 .intro { min-height: 440px; display: flex; flex-direction: column; gap: 20px; }
@@ -265,6 +283,124 @@ const store = {
   del(k) { try { localStorage.removeItem("ap:" + k); } catch {} },
 };
 const KEYS = "ABCDE";
+/* Saved progress is keyed by the email entered on the welcome screen. It lives in this browser
+   and syncs to the Worker (/api/progress), so the same email picks it up on any device. Newest save wins. */
+const SYNC_KEYS = ["runL", "runP", "lastL", "lastP", "seenP", "missP", "learnP"];
+const saved = {
+  key: k => k + ":" + (store.get("email") || "").toLowerCase(),
+  get: k => store.get(saved.key(k)),
+  set: (k, v) => { store.set(saved.key(k), v); sync.touch(); },
+  del: k => { store.del(saved.key(k)); sync.touch(); },
+};
+const sync = {
+  timer: null,
+  url: () => "/api/progress?email=" + encodeURIComponent((store.get("email") || "").toLowerCase()),
+  snapshot() { const o = { updatedAt: store.get(saved.key("updatedAt")) || 0 }; SYNC_KEYS.forEach(k => o[k] = saved.get(k)); return o; },
+  touch() { store.set(saved.key("updatedAt"), Date.now()); clearTimeout(sync.timer); sync.timer = setTimeout(sync.push, 800); },
+  push(keepalive) {
+    clearTimeout(sync.timer); sync.timer = null;
+    if (!store.get("email") || location.protocol === "file:") return;
+    fetch(sync.url(), { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(sync.snapshot()), keepalive: !!keepalive }).catch(() => {});
+  },
+  // Fetch the server copy. Returns true when it was newer and replaced what this browser had.
+  async pull() {
+    if (!store.get("email") || location.protocol === "file:") return false;
+    try {
+      const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 4000);
+      const r = await fetch(sync.url(), { signal: ctl.signal, cache: "no-store" }); clearTimeout(t);
+      if (!r.ok) return false;
+      const remote = await r.json(), local = store.get(saved.key("updatedAt")) || 0;
+      if ((remote.updatedAt || 0) > local) {
+        SYNC_KEYS.forEach(k => remote[k] == null ? store.del(saved.key(k)) : store.set(saved.key(k), remote[k]));
+        store.set(saved.key("updatedAt"), remote.updatedAt);
+        return true;
+      }
+      if (local > (remote.updatedAt || 0)) sync.push();
+    } catch {}
+    return false;
+  },
+};
+// Pull, then redraw the path screen if it is showing and the server had newer progress.
+const pullAndRefresh = () => sync.pull().then(changed => { if (changed && $(".path-screen")) choosePath(); });
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden" && sync.timer) sync.push(true); else if (document.visibilityState === "visible" && $(".path-screen")) pullAndRefresh(); });
+function saveL(next) { saved.set("runL", { level: L.level, lesson: L.lesson, review: L.review, ids: L.concepts.map(c => c.id), i: next.i, phase: next.phase, results: L.results }); }
+function saveP(i) { saved.set("runP", { opts: P.opts, deck: P.deck.map(x => [x.s.id, x.q.id]), i, log: P.log, elapsed: (Date.now() - P.t0) / 1000, budget: P.budget }); }
+function resumeL(r) {
+  const byId = Object.fromEntries(DATA.learner.concepts.map(c => [c.id, c]));
+  const level = r.level || 1;
+  const concepts = r.ids.map(id => byId[id]).filter(c => c && (level === 1 || c.applied));
+  if (!concepts.length) { saved.del("runL"); return learnMap(); }
+  L = { level, lesson: r.lesson ?? null, review: r.review || [], concepts, i: r.i, phase: r.phase, results: r.results || {} };
+  L.i >= L.concepts.length ? learnResults() : learnCard();
+}
+function resumeP(r) {
+  const sc = Object.fromEntries(DATA.practitioner.scenarios.map(x => [x.id, x]));
+  const deck = r.deck.map(([sid, qid]) => { const sx = sc[sid]; const q = sx && sx.questions.find(q => q.id === qid); return q && { s: sx, q }; }).filter(Boolean);
+  if (!deck.length) { saved.del("runP"); return pracSetup(); }
+  P = { opts: r.opts, deck, i: r.i, log: r.log || [], t0: Date.now() - (r.elapsed || 0) * 1000, budget: r.budget || deck.length * 120, timerId: null };
+  P.i >= P.deck.length ? pracResults() : pracCard();
+}
+
+/* ---------- Practitioner progress: which questions you have seen and which to review ---------- */
+const allP = () => DATA.practitioner.scenarios.flatMap(s => s.questions.map(q => ({ s, q })));
+const seenSet = () => new Set(saved.get("seenP") || []);
+const missSet = () => new Set(saved.get("missP") || []);
+function markP(id, ok) {
+  const seen = seenSet(); seen.add(id); saved.set("seenP", [...seen]);
+  const miss = missSet(); ok ? miss.delete(id) : miss.add(id); saved.set("missP", [...miss]);
+}
+// Unseen questions first, then ones you have seen; random order within each group.
+function pickFresh(pool, n) {
+  const seen = seenSet();
+  return [...shuffle(pool.filter(x => !seen.has(x.q.id))), ...shuffle(pool.filter(x => seen.has(x.q.id)))].slice(0, n);
+}
+// Keep each scenario's questions together, like the real exam.
+function groupByScenario(items) {
+  const order = [], by = {};
+  items.forEach(x => { if (!by[x.s.id]) { by[x.s.id] = []; order.push(x.s.id); } by[x.s.id].push(x); });
+  return order.flatMap(id => by[id]);
+}
+const PMODES = {
+  quick: { label: "Quick set", start: "Start quick set", n: 12 },
+  exam: { label: "Exam simulation", start: "Start the exam", n: 60 },
+  focus: { label: "Focus", start: "Start focus set", n: 12 },
+  missed: { label: "Review missed", start: "Start review", n: 30 },
+};
+function buildDeck(opts) {
+  const pool = allP();
+  if (opts.mode === "exam") return shuffle(DATA.practitioner.scenarios).slice(0, 4).flatMap(s => pickFresh(s.questions.map(q => ({ s, q })), 15));
+  if (opts.mode === "missed") { const m = missSet(); return groupByScenario(shuffle(pool.filter(x => m.has(x.q.id))).slice(0, PMODES.missed.n)); }
+  if (opts.mode === "focus") { const f = opts.focus || "d1"; return groupByScenario(pickFresh(pool.filter(x => f[0] === "d" ? x.q.domain === +f.slice(1) : x.s.id === f), PMODES.focus.n)); }
+  return groupByScenario(pickFresh(pool, PMODES.quick.n));
+}
+
+/* ---------- Learner progress: levels made of short lessons, one lesson per domain ---------- */
+const LEVELS = {
+  1: { name: "Foundations", desc: "Plain explanations and friendly questions." },
+  2: { name: "Applied", desc: "The same ideas in short, realistic situations." },
+  3: { name: "Exam bridge", desc: "Exam-style questions with traps, from the Practitioner bank." },
+};
+const UNLOCK = 0.7;
+const levelConcepts = lvl => DATA.learner.concepts.filter(c => lvl === 1 || (c.applied && c.applied.length === 2));
+const lessonsOf = lvl => [1, 2, 3, 4, 5].map(d => ({ domain: d, concepts: levelConcepts(lvl).filter(c => c.domain === d) })).filter(x => x.concepts.length);
+const learnRec = lvl => (saved.get("learnP") || {})[lvl] || {};
+function levelStats(lvl) {
+  const cs = levelConcepts(lvl), rec = learnRec(lvl);
+  const tried = cs.filter(c => rec[c.id]).length, first = cs.filter(c => rec[c.id] === "first").length;
+  return { total: cs.length, tried, first, done: cs.length > 0 && tried === cs.length, rate: tried ? first / tried : 0 };
+}
+const unlocked = lvl => lvl === 1 || (levelStats(lvl - 1).done && levelStats(lvl - 1).rate >= UNLOCK);
+const lessonDone = (lvl, lesson) => { const rec = learnRec(lvl); return lesson.concepts.every(c => rec[c.id]); };
+// The next thing to study: the first unfinished lesson in the highest unlocked level.
+function nextLesson() {
+  for (const lvl of [2, 1]) {
+    if (!unlocked(lvl)) continue;
+    const ls = lessonsOf(lvl), k = ls.findIndex(l => !lessonDone(lvl, l));
+    if (k >= 0) return { level: lvl, lesson: k };
+  }
+  return null;
+}
+const hasLearnProgress = () => Object.keys(learnRec(1)).length > 0;
 const domTag = d => `<span class="tag"><span class="sw" style="background:var(--d${d})"></span>${esc(DOMAINS[d].short)}</span>`;
 function show(html) { app.innerHTML = `<div class="screen">${html}</div>`; window.scrollTo({ top: 0, behavior: "smooth" }); }
 function burst(el) {
@@ -310,7 +446,7 @@ function welcome() {
     e.preventDefault();
     const v = input.value.trim();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)) { $("#emailErr").textContent = "Enter an email like name@example.com."; input.parentElement.classList.remove("shake"); void input.offsetWidth; input.parentElement.classList.add("shake"); return; }
-    store.set("email", v); choosePath();
+    store.set("email", v); choosePath(); pullAndRefresh();
   };
 }
 
@@ -318,24 +454,36 @@ function welcome() {
 function choosePath() {
   keyHandler = null; topbar();
   const nL = DATA.learner.concepts.length, nP = DATA.practitioner.scenarios.reduce((s, x) => s + x.questions.length, 0);
+  const rL = saved.get("runL"), rP = saved.get("runP"), lastL = saved.get("lastL"), lastP = saved.get("lastP");
+  const nx = nextLesson();
+  const goL = rL ? `Continue · Level ${rL.level || 1}, card ${Math.min(rL.i + 1, rL.ids.length)} of ${rL.ids.length} →`
+    : !hasLearnProgress() ? "Start learning →"
+    : nx ? `Level ${nx.level} · lesson ${nx.lesson + 1} of ${lessonsOf(nx.level).length} →` : "See your levels →";
+  const seenN = seenSet().size, missN = missSet().size;
+  const goP = rP ? `Continue · question ${Math.min(rP.i + 1, rP.deck.length)} of ${rP.deck.length} →` : "Start reps →";
+  const lastLine = x => x ? `<span class="last">Last time: ${esc(x)}</span>` : "";
   show(`<div class="path-screen">
     <div class="stack" style="gap:6px"><span class="eyebrow">Choose your path</span><h1 style="font-size:clamp(1.4rem,5.5vw,2rem);line-height:1.15">How do you want to study today?</h1></div>
     <div class="paths">
       <button class="path learn" id="goLearn" type="button">
         <span class="path-head"><span class="path-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3Z"/></svg></span><h2>Learner</h2></span>
         <p>Build the ideas from the ground up with friendly questions.</p>
-        <ul><li>A one-minute tour of the exam</li><li>${nL} core concepts, plain explanations</li><li>Miss one and you get a second try</li></ul>
-        <span class="go">Start learning →</span>
+        <ul><li>A one-minute tour of the exam</li><li>${nL} concepts in three levels of short lessons</li><li>Miss one and you get a second try</li></ul>
+        ${lastLine(lastL)}<span class="go">${goL}</span>
       </button>
       <button class="path prac" id="goPrac" type="button">
         <span class="path-head"><span class="path-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg></span><h2>Practitioner</h2></span>
         <p>Exam-style scenario reps for when you are close to test day.</p>
-        <ul><li>${nP} scenario questions, single and multi-select</li><li>Every option explained, every trap named</li><li>Optional timer at exam pace</li></ul>
-        <span class="go">Start reps →</span>
+        <ul><li>${nP} scenario questions, single and multi-select</li><li>Quick sets, a full exam simulation, or review what you missed</li><li>Every option explained, every trap named</li></ul>
+        ${seenN ? `<span class="last">Seen ${seenN} of ${nP}${missN ? ` · ${missN} to review` : ""}</span>` : lastLine(lastP)}<span class="go">${goP}</span>
       </button>
-    </div></div>`);
-  $("#goLearn").onclick = () => intro(0);
-  $("#goPrac").onclick = pracSetup;
+    </div>
+    ${rL || rP ? `<div class="row fresh">${rL ? `<button class="link" id="freshL" type="button">Leave this lesson</button>` : ""}${rP ? `<button class="link" id="freshP" type="button">New Practitioner session</button>` : ""}</div>` : ""}
+    </div>`);
+  $("#goLearn").onclick = () => rL ? resumeL(rL) : hasLearnProgress() ? learnMap() : intro(0);
+  $("#goPrac").onclick = () => rP ? resumeP(rP) : pracSetup();
+  const fL = $("#freshL"); if (fL) fL.onclick = () => { saved.del("runL"); learnMap(); };
+  const fP = $("#freshP"); if (fP) fP.onclick = () => { saved.del("runP"); pracSetup(); };
 }
 
 /* ---------- 3. Learner intro walkthrough ---------- */
@@ -392,28 +540,68 @@ function intro(i) {
     const pick = shuffle([0,1,2,3,4,5]).slice(0, 4);
     pick.forEach((n, k) => setTimeout(() => scens[n] && scens[n].classList.add("lit"), 700 + k * 280));
   }
-  const go = d => { const n = i + d; if (n < 0) return; if (n >= INTRO.length) learnStart(); else intro(n); };
+  const go = d => { const n = i + d; if (n < 0) return; if (n >= INTRO.length) startNext(); else intro(n); };
   $("#next").onclick = () => go(1); $("#next").focus();
   const b = $("#back"); if (b) b.onclick = () => go(-1);
-  $("#skip").onclick = () => learnStart();
+  $("#skip").onclick = () => startNext();
   keyHandler = e => { if (e.key === "ArrowRight" || e.key === "Enter") { e.preventDefault(); go(1); } if (e.key === "ArrowLeft") go(-1); };
 }
 
-/* ---------- 4. Learner quiz ---------- */
+/* ---------- 4. Learner levels and lessons ---------- */
 let L = null;
-function learnStart(onlyIds) {
-  const concepts = DATA.learner.concepts.filter(c => !onlyIds || onlyIds.includes(c.id));
-  L = { concepts, i: 0, phase: 0, results: {} };
+function learnMap() {
+  keyHandler = null; topbar();
+  const nx = nextLesson();
+  const levelCard = lvl => {
+    const st = levelStats(lvl), open = unlocked(lvl), ls = lvl < 3 ? lessonsOf(lvl) : [];
+    const prev = lvl > 1 ? levelStats(lvl - 1) : null;
+    const lockMsg = prev && !prev.done ? `Finish every Level ${lvl - 1} lesson to unlock.` : `Get ${Math.round(UNLOCK * 100)}% right on the first try in Level ${lvl - 1} to unlock (now ${Math.round((prev?.rate || 0) * 100)}%).`;
+    const body = lvl === 3
+      ? (open ? `<button class="btn" id="bridge" type="button">Start 12 exam-style questions</button>` : "")
+      : `<div class="lessons">${ls.map((l, k) => { const done = lessonDone(lvl, l), isNext = nx && nx.level === lvl && nx.lesson === k;
+          return `<button class="lesson ${done ? "done" : ""} ${isNext ? "next" : ""}" type="button" data-lvl="${lvl}" data-k="${k}" ${open ? "" : "disabled"}><span class="sw" style="background:var(--d${l.domain})"></span><span class="ln">Lesson ${k + 1} · ${esc(DOMAINS[l.domain].short)}</span><span class="lc">${done ? "Done" : `${l.concepts.length} cards`}</span></button>`; }).join("")}</div>`;
+    const missedN = levelConcepts(lvl).filter(c => ["miss", "second"].includes(learnRec(lvl)[c.id])).length;
+    return `<div class="level ${open ? "" : "locked"}">
+      <div class="level-head"><div><span class="eyebrow">Level ${lvl}</span><h2>${LEVELS[lvl].name}</h2></div>${lvl < 3 && st.tried ? `<span class="hint">${st.tried} of ${st.total} cards · ${Math.round(st.rate * 100)}% first try</span>` : ""}</div>
+      <p class="hint">${open ? LEVELS[lvl].desc : lockMsg}</p>
+      ${body}
+      ${open && lvl < 3 && missedN ? `<button class="link" data-review="${lvl}" type="button">Review the ${missedN} idea${missedN > 1 ? "s" : ""} you missed</button>` : ""}
+    </div>`;
+  };
+  show(`<div class="stack" style="gap:18px">
+    <div class="row" style="align-items:flex-end"><div class="stack" style="gap:4px"><span class="eyebrow">Learner</span><h1 style="font-size:clamp(1.5rem,5.5vw,2rem)">Your levels</h1></div><span class="spacer"></span><button class="link" id="tour" type="button">Exam tour</button></div>
+    ${nx ? `<button class="btn" id="nextL" type="button">Next: Level ${nx.level}, lesson ${nx.lesson + 1} · ${esc(DOMAINS[lessonsOf(nx.level)[nx.lesson].domain].short)} →</button>` : ""}
+    ${[1, 2, 3].map(levelCard).join("")}
+  </div>`);
+  $("#tour").onclick = () => intro(0);
+  const n = $("#nextL"); if (n) n.onclick = () => startLesson(nx.level, nx.lesson);
+  app.querySelectorAll(".lesson[data-k]").forEach(b => b.onclick = () => startLesson(+b.dataset.lvl, +b.dataset.k));
+  app.querySelectorAll("[data-review]").forEach(b => b.onclick = () => { const lvl = +b.dataset.review; startConcepts(lvl, null, levelConcepts(lvl).filter(c => ["miss", "second"].includes(learnRec(lvl)[c.id])).slice(0, 10)); });
+  const br = $("#bridge"); if (br) br.onclick = () => pracStart({ mode: "quick", timed: false });
+}
+function startNext() { const nx = nextLesson(); nx ? startLesson(nx.level, nx.lesson) : learnMap(); }
+// A lesson is one domain's concepts, plus up to two earlier ideas from this level that you missed.
+function startLesson(level, k) {
+  const lesson = lessonsOf(level)[k], rec = learnRec(level), here = new Set(lesson.concepts.map(c => c.id));
+  const carry = levelConcepts(level).filter(c => !here.has(c.id) && ["miss", "second"].includes(rec[c.id])).slice(0, 2);
+  startConcepts(level, k, [...lesson.concepts, ...carry], carry.map(c => c.id));
+}
+function startConcepts(level, lesson, concepts, review = []) {
+  L = { level, lesson, review, concepts, i: 0, phase: 0, results: {} };
+  saveL({ i: 0, phase: 0 });
   learnCard();
 }
+// Kept for the results screen's "practice the ones I missed" button.
+function learnStart(onlyIds) { startConcepts(L ? L.level : 1, null, levelConcepts(L ? L.level : 1).filter(c => onlyIds.includes(c.id))); }
 function learnCard() {
-  const c = L.concepts[L.i], q = c.questions[L.phase];
+  const c = L.concepts[L.i], q = (L.level === 2 ? c.applied : c.questions)[L.phase];
+  const where = L.lesson != null ? `Level ${L.level} · lesson ${L.lesson + 1}` : `Level ${L.level} · review`;
   const order = shuffle([0, 1, 2, 3]);
   const total = L.concepts.length, pct = (L.i / total) * 100;
   show(`<div class="stack">
     <div class="progress" aria-hidden="true"><div style="width:${pct}%"></div></div>
     <div class="card stack" style="gap:20px">
-      <div class="qmeta"><span>Concept ${L.i + 1} of ${total}${L.phase ? " · second try" : ""}</span>${domTag(c.domain)}</div>
+      <div class="qmeta"><span>${where} · ${L.i + 1} of ${total}${L.phase ? " · second try" : ""}${L.review.includes(c.id) ? " · review" : ""}</span>${domTag(c.domain)}</div>
       <p class="qprompt">${fmt(q.prompt)}</p>
       <div class="opts">${order.map((o, k) => `<button class="opt" type="button" data-o="${o}"><span class="key">${KEYS[k]}</span><span class="txt">${fmt(q.options[o])}</span></button>`).join("")}</div>
       <div id="fb"></div>
@@ -426,6 +614,7 @@ function learnCard() {
     btns.forEach(b => { b.disabled = true; const bo = +b.dataset.o; if (bo === q.answer) b.classList.add("right"); else if (b === btn) b.classList.add("wrong"); else b.classList.add("dim"); });
     const r = L.results[c.id] || (L.results[c.id] = { domain: c.domain, first: null, second: null });
     if (L.phase === 0) r.first = ok; else r.second = ok;
+    saveL(ok || L.phase === 1 ? { i: L.i + 1, phase: 0 } : { i: L.i, phase: 1 });
     const fb = $("#fb");
     if (ok) {
       burst(btn);
@@ -460,6 +649,13 @@ function learnResults() {
   res.forEach(({ c, r }) => { const d = byDom[c.domain] || (byDom[c.domain] = { ok: 0, n: 0 }); d.n++; if (r.first) d.ok++; else if (r.second) d.ok += .5; });
   const doms = Object.keys(byDom).map(Number).sort();
   const weakest = doms.slice().sort((a, b) => byDom[a].ok / byDom[a].n - byDom[b].ok / byDom[b].n)[0];
+  const before2 = unlocked(2), before3 = unlocked(3);
+  const all = saved.get("learnP") || {}, rec = all[L.level] || (all[L.level] = {});
+  res.forEach(({ c, r }) => rec[c.id] = r.first ? "first" : r.second ? "second" : "miss");
+  saved.set("learnP", all);
+  saved.del("runL"); saved.set("lastL", `Level ${L.level}: ${first} of ${L.concepts.length} on the first try`);
+  const justUnlocked = !before2 && unlocked(2) ? 2 : !before3 && unlocked(3) ? 3 : 0;
+  const nx = nextLesson();
   show(`<div class="card stack" style="gap:24px">
     <span class="eyebrow">Learner results</span>
     <div class="row" style="align-items:flex-end;gap:20px"><div class="score">${first}<span style="font-size:.4em;color:var(--muted)">/${L.concepts.length}</span></div><p class="lede">concepts right on the first try. ${second ? `You fixed ${second} more on the second try.` : ""}</p></div>
@@ -467,47 +663,55 @@ function learnResults() {
     ${missed.length ? `<div class="stack" style="gap:10px"><h3 class="section-title">Ideas to revisit</h3><div class="revisit">${missed.map(({ c }) => `<div><b>${esc(c.title)}</b>${fmt(c.rule)}</div>`).join("")}</div></div>`
       : `<div class="insight"><b>Every concept landed.</b><span>You are ready for exam-style questions. The Practitioner path uses harder scenarios where every wrong answer is a believable trap.</span></div>`}
     ${missed.length && weakest ? `<div class="insight"><b>Focus next on ${esc(DOMAINS[weakest].short)}.</b><span>It was your lowest domain this round.</span></div>` : ""}
-    <div class="row">${missed.length ? `<button class="btn" id="again" type="button">Practice the ${missed.length} I missed</button>` : ""}<button class="btn ${missed.length ? "ghost" : ""}" id="toPrac" type="button">Try Practitioner</button><button class="btn ghost" id="restart" type="button">Start over</button></div>
+    ${justUnlocked ? `<div class="insight unlock"><b>Level ${justUnlocked} unlocked: ${LEVELS[justUnlocked].name}.</b><span>${LEVELS[justUnlocked].desc}</span></div>` : ""}
+    <div class="row">${nx ? `<button class="btn" id="nextL" type="button">Next lesson</button>` : justUnlocked === 3 || unlocked(3) ? `<button class="btn" id="toPrac" type="button">Try exam-style questions</button>` : ""}${missed.length ? `<button class="btn ghost" id="again" type="button">Practice the ${missed.length} I missed</button>` : ""}<button class="btn ghost" id="map" type="button">All levels</button></div>
   </div>`);
   const a = $("#again"); if (a) a.onclick = () => learnStart(missed.map(x => x.c.id));
-  $("#toPrac").onclick = pracSetup; $("#restart").onclick = () => learnStart();
-  if (first === L.concepts.length) burst($(".score"));
+  const n = $("#nextL"); if (n) n.onclick = () => startLesson(nx.level, nx.lesson);
+  const tp = $("#toPrac"); if (tp) tp.onclick = pracSetup;
+  $("#map").onclick = learnMap;
+  if (first === L.concepts.length || justUnlocked) burst($(".score"));
 }
 
 /* ---------- 5. Practitioner ---------- */
 let P = null;
 function pracSetup() {
-  keyHandler = null;
-  const scen = DATA.practitioner.scenarios;
-  const opts = { draw: store.get("draw") || "exam", timed: store.get("timed") ?? false };
-  const per = Math.round(scen.reduce((s, x) => s + x.questions.length, 0) / scen.length);
+  keyHandler = null; topbar();
+  const nP = allP().length, seenN = seenSet().size, missN = missSet().size;
+  const opts = { mode: store.get("pmode") || "quick", focus: store.get("pfocus") || "d1", timed: store.get("timed") ?? false };
+  if (opts.mode === "missed" && !missN) opts.mode = "quick";
+  const focusChips = [...[1, 2, 3, 4, 5].map(d => [`d${d}`, DOMAINS[d].short]), ...DATA.practitioner.scenarios.map(x => [x.id, x.title])];
   const render = () => {
-    show(`<div class="card stack" style="gap:22px">
+    const exam = opts.mode === "exam";
+    show(`<div class="card stack" style="gap:20px">
       <span class="eyebrow">Practitioner reps</span>
-      <h1 style="font-size:clamp(1.7rem,5.5vw,2.2rem)">Set up your session.</h1>
-      <p class="lede">Questions come in scenario groups, like the real exam. Option order is shuffled every time, and the right answer is not the longest one any more often than chance.</p>
-      <div class="stack" style="gap:8px"><b>Which scenarios?</b><div class="options-grid">
-        <button class="choice ${opts.draw === "exam" ? "on" : ""}" data-draw="exam" type="button"><b>Exam draw</b><span>4 random scenarios, about ${per * 4} questions</span></button>
-        <button class="choice ${opts.draw === "all" ? "on" : ""}" data-draw="all" type="button"><b>All six</b><span>Every scenario, ${scen.reduce((s, x) => s + x.questions.length, 0)} questions</span></button>
-      </div></div>
-      <div class="stack" style="gap:8px"><b>Pace</b><div class="options-grid">
+      <h1 style="font-size:clamp(1.7rem,5.5vw,2.2rem)">Pick a session.</h1>
+      <p class="lede">${seenN ? `You have seen ${seenN} of ${nP} questions${missN ? ` and have ${missN} to review` : ""}. New questions come first.` : `${nP} questions in six scenarios. New questions come first, and option order is shuffled every time.`}</p>
+      <div class="options-grid">
+        <button class="choice ${opts.mode === "quick" ? "on" : ""}" data-mode="quick" type="button"><b>Quick set</b><span>12 questions, about 15 minutes</span></button>
+        <button class="choice ${exam ? "on" : ""}" data-mode="exam" type="button"><b>Exam simulation</b><span>60 questions from 4 scenarios, 120 minutes</span></button>
+        <button class="choice ${opts.mode === "focus" ? "on" : ""}" data-mode="focus" type="button"><b>Focus</b><span>12 questions on one domain or scenario</span></button>
+        <button class="choice ${opts.mode === "missed" ? "on" : ""}" data-mode="missed" type="button" ${missN ? "" : "disabled"}><b>Review missed</b><span>${missN ? `${missN} question${missN > 1 ? "s" : ""} you got wrong` : "Nothing to review yet"}</span></button>
+      </div>
+      ${opts.mode === "focus" ? `<div class="stack" style="gap:8px"><b>Focus on</b><div class="chips">${focusChips.map(([k, l]) => `<button class="pill ${opts.focus === k ? "on" : ""}" data-focus="${k}" type="button">${esc(l)}</button>`).join("")}</div></div>` : ""}
+      ${exam ? `<p class="hint">Timed like the real exam: 2 minutes per question. Each scenario's questions come together.</p>` : `<div class="stack" style="gap:8px"><b>Pace</b><div class="options-grid">
         <button class="choice ${!opts.timed ? "on" : ""}" data-timed="0" type="button"><b>Untimed</b><span>Take as long as you need</span></button>
         <button class="choice ${opts.timed ? "on" : ""}" data-timed="1" type="button"><b>Exam pace</b><span>A clock with 2 minutes per question</span></button>
-      </div></div>
-      <div class="row"><button class="btn" id="startP" type="button">Start reps</button></div>
+      </div></div>`}
+      <div class="row"><button class="btn" id="startP" type="button">${PMODES[opts.mode].start}</button></div>
     </div>`);
-    app.querySelectorAll("[data-draw]").forEach(b => b.onclick = () => { opts.draw = b.dataset.draw; store.set("draw", opts.draw); render(); });
+    app.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => { opts.mode = b.dataset.mode; store.set("pmode", opts.mode); render(); });
+    app.querySelectorAll("[data-focus]").forEach(b => b.onclick = () => { opts.focus = b.dataset.focus; store.set("pfocus", opts.focus); render(); });
     app.querySelectorAll("[data-timed]").forEach(b => b.onclick = () => { opts.timed = b.dataset.timed === "1"; store.set("timed", opts.timed); render(); });
-    $("#startP").onclick = () => pracStart(opts);
+    $("#startP").onclick = () => pracStart({ ...opts, timed: exam || opts.timed });
   };
   render();
 }
 function pracStart(opts, onlyIds) {
-  let scen = DATA.practitioner.scenarios;
-  if (!onlyIds && opts.draw === "exam") scen = shuffle(scen).slice(0, 4); else scen = shuffle(scen);
-  const deck = [];
-  scen.forEach(s => s.questions.forEach(q => { if (!onlyIds || onlyIds.includes(q.id)) deck.push({ s, q }); }));
+  const deck = onlyIds ? groupByScenario(shuffle(allP().filter(x => onlyIds.includes(x.q.id)))) : buildDeck(opts);
+  if (!deck.length) return pracSetup();
   P = { opts, deck, i: 0, log: [], t0: Date.now(), budget: deck.length * 120, timerId: null };
+  saveP(0);
   pracCard();
 }
 function fmtTime(sec) { const s = Math.abs(sec); return (sec < 0 ? "-" : "") + Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0"); }
@@ -557,6 +761,8 @@ function pracCard() {
     const ok = q.options.every((opt, i) => opt.correct === sel.has(i));
     const picked = [...sel];
     P.log.push({ id: q.id, domain: q.domain, ok, conf, traps: picked.map(i => q.options[i].trap).filter(Boolean) });
+    markP(q.id, ok);
+    saveP(P.i + 1);
     btns.forEach(b => {
       b.disabled = true; const o = +b.dataset.o, opt = q.options[o];
       b.classList.remove("sel");
@@ -595,6 +801,7 @@ function pracResults() {
   const guessAcc = guess.length ? Math.round(guess.filter(x => x.ok).length / guess.length * 100) : null;
   const elapsed = (Date.now() - P.t0) / 1000;
   const missed = P.log.filter(x => !x.ok).map(x => x.id);
+  saved.del("runP"); saved.set("lastP", `${pct}%, ${ok} of ${n} correct${P.opts.mode ? ` (${PMODES[P.opts.mode].label.toLowerCase()})` : ""}`);
   const verdict = pct >= 80 ? "Exam-ready pace. Keep the reps going." : pct >= 70 ? "Close to the line. Tighten your weakest domain." : "Building up. Review the traps below, then go again.";
   show(`<div class="card stack" style="gap:24px">
     <span class="eyebrow">Practitioner results</span>
@@ -611,5 +818,5 @@ function pracResults() {
 }
 
 /* ---------- boot ---------- */
-store.get("email") ? choosePath() : welcome();
+if (store.get("email")) { choosePath(); pullAndRefresh(); } else welcome();
 </script>
